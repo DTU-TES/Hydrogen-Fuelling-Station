@@ -1,7 +1,7 @@
 within ;
 package HydrogenRefuelingCoolProp "Final hydrogen library used for PhD thesis"
   model HRSInfo "Sets the parameters for the fueling based on J2601"
-  //Decideds the average pressure ramp rate, final pressure in HSS,
+  //Decideds the average pressure ramp rate, final pressure in HSS
   //final state of charge and temperature out of the fueling station based on J2601
   //using ambient temperature, starting pressure in HSS and refueling protocol as input
   import SI =
@@ -8075,7 +8075,6 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
   end Templates;
 
   package Examples
-
 
     model DirectCompression
       import SI = Modelica.SIunits;
