@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   xmlns:dc="http://purl.org/dc/elements/1.1/"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   width="744.09448819"
+   height="1052.3622047"
+   id="svg5246"
+   version="1.1"
+   inkscape:version="0.48.4 r9939"
+   sodipodi:docname="NeedleValve.svg"
+   inkscape:export-filename="C:\Users\edro\Documents\Dymola\Graphics\NeedleValve.png"
+   inkscape:export-xdpi="90"
+   inkscape:export-ydpi="90">
+  <defs
+     id="defs5248" />
+  <sodipodi:namedview
+     id="base"
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     borderopacity="1.0"
+     inkscape:pageopacity="0.0"
+     inkscape:pageshadow="2"
+     inkscape:zoom="1.76"
+     inkscape:cx="375"
+     inkscape:cy="700.42639"
+     inkscape:document-units="px"
+     inkscape:current-layer="layer1"
+     showgrid="false"
+     inkscape:window-width="1920"
+     inkscape:window-height="1138"
+     inkscape:window-x="1192"
+     inkscape:window-y="312"
+     inkscape:window-maximized="1" />
+  <metadata
+     id="metadata5251">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type
+           rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+        <dc:title></dc:title>
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1">
+    <path
+       sodipodi:type="star"
+       style="fill:#000000;stroke:#000026;stroke-width:3;stroke-miterlimit:4;stroke-opacity:1;stroke-dasharray:none"
+       id="path5261"
+       sodipodi:sides="3"
+       sodipodi:cx="282.38635"
+       sodipodi:cy="182.47581"
+       sodipodi:r1="89.572922"
+       sodipodi:r2="44.786461"
+       sodipodi:arg1="-2.6240201"
+       sodipodi:arg2="-1.5768226"
+       inkscape:flatsided="false"
+       inkscape:rounded="0"
+       inkscape:randomized="0"
+       d="m 204.54544,138.15763 77.57102,-0.46746 77.57102,-0.46747 -38.38067,67.4122 -38.38067,67.41221 -39.19035,-66.94474 z"
+       inkscape:transform-center-x="-0.85938162"
+       inkscape:transform-center-y="41.122962"
+       transform="matrix(0.49703486,0.01234921,-0.02218408,1.8385597,164.83281,-52.74072)" />
+    <path
+       style="fill:none;stroke:#000000;stroke-width:0.99445236px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
+       d="M 1.0639296,202.8594 0.49722617,451.86495 599.50277,203.42276 l 0,247.87884 z"
+       id="path5263"
+       inkscape:connector-curvature="0" />
+  </g>
+</svg>
