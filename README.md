@@ -9,7 +9,7 @@ Make sure dymola is installed and working correctly (Hence, modelica and visual 
 Download hydrogen fuelling package.
 extract files in Dymola folder in Docments. Keep library structure within the "Hydrogen-Fuelling-Station" folder. 
 
-Installalation CoolProp.
+Installation of CoolProp.
 copy "CoolPropLib.lib" from CoolPropFiles folder into installation folder of dymola "Dymola/bin/lib"
 copy "CoolPropLib.h" from CoolPropFiles folder into installation folder of dymola "Dymola/source"
 
