@@ -7,11 +7,11 @@ Installation:
 Make sure dymola is installed and working correctly (Hence, modelica and visual studio/express 2010 should be installed).
 
 Download hydrogen fuelling package.
-extract files in Dymola folder in Docments. Keep library structure within the "Hydrogen-Fuelling-Station" folder. 
+Extract files in Dymola folder in Docments. Keep library structure within the "Hydrogen-Fuelling-Station" folder. 
 
 Installation of CoolProp.
-copy "CoolPropLib.lib" from CoolPropFiles folder into installation folder of dymola "Dymola/bin/lib"
-copy "CoolPropLib.h" from CoolPropFiles folder into installation folder of dymola "Dymola/source"
+Copy "CoolPropLib.lib" from CoolPropFiles folder into installation folder of dymola "Dymola/bin/lib".
+Copy "CoolPropLib.h" from CoolPropFiles folder into installation folder of dymola "Dymola/source".
 
 
 Open Dymola, load "HydrogenRefuelingCoolProp" and Enjoy :)
