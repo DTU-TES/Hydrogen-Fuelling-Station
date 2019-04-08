@@ -4,7 +4,7 @@ Hydrogen-Fuelling-Station
 Library for creating models of Hydrogen fuelling stations in Dymola, part of Erasmus Rothuizen's PhD. 
 
 Installation:
-Make sure dymola is installed and working correctly (Hence, modelica and visual studio/express 2010 should be installed).
+Make sure dymola is installed and working correctly (Hence, modelica and visual studio/express (2010/2013) should be installed).
 
 Download hydrogen fuelling package.
 Extract files in Dymola folder in Docments. Keep library structure within the "Hydrogen-Fuelling-Station" folder. 
