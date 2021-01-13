@@ -147,14 +147,14 @@ package HydrogenFuelingStationLibrary
 
       equation
 
-        FP_table.u1=T_amb;
+        FP_table.u1=T_amb-273.15;
         FP_table.u2=p_initial*10e-7;
 
-        APRR_table.u=T_amb;
+        APRR_table.u=T_amb-273.15;
         APRR_table.y[1]*10e3=APRR[1];
         APRR_table.y[2]*10e3=APRR[2];
 
-        FPTO_table.u=T_amb;
+        FPTO_table.u=T_amb-273.15;
 
       if TopOff==true then
         FP[1]=FPTO_table.y[1]*10e5;
@@ -164,21 +164,24 @@ package HydrogenFuelingStationLibrary
         FP[2]=0;
       end if;
 
-      MC_Coef1.u=T_amb;
+      MC_Coef1.u=T_amb-273.15;
       MC_Coef1.y[1]=a[1];
       MC_Coef1.y[2]=b[1];
       MC_Coef1.y[3]=c[1];
       MC_Coef1.y[4]=d[1];
 
-      MC_Coef2.u=T_amb;
+      MC_Coef2.u=T_amb-273.15;
       MC_Coef2.y[1]=a[2];
       MC_Coef2.y[2]=b[2];
       MC_Coef2.y[3]=c[2];
       MC_Coef2.y[4]=d[2];
 
-      FP_tableK.u1=T_amb;
+      FP_tableK.u1=T_amb-273.15;
       FP_tableK.u2=p_initial*10e-7;
       FP_tableK.y=FPK;
+
+
+
 
         annotation (Icon(coordinateSystem(preserveAspectRatio=false)), Diagram(
               coordinateSystem(preserveAspectRatio=false)));
@@ -638,12 +641,13 @@ package HydrogenFuelingStationLibrary
 
       //         assert(p_limit_low<=p_station, "P_station exceeds lower limit");
       //        assert(p_station<=p_limit_high, "P_station exceeds  higher limit");
-      //  if Comm==true then
-      //    assert(p_station <= p_target_comm, "Fuelling finished due to final pressure reached - With communication");
-      //    assert(p_station <= p_limit_comm, "Fuelling finished due to pressure limit reached - With communication");
-      //  else
-      //    assert(p_station <= p_target_non_comm, "Fuelling finished due to pressure target - non communication");
-      //    end if;
+
+         if Communication==true then
+           assert(p_station <= p_target_comm, "Fuelling finished due to final pressure reached - With communication");
+           assert(p_station <= p_limit_comm, "Fuelling finished due to pressure limit reached - With communication");
+         else
+           assert(p_station <= p_target_non_comm, "Fuelling finished due to pressure target - non communication");
+           end if;
 
         annotation (Icon(coordinateSystem(preserveAspectRatio=false), graphics={
                 Rectangle(extent={{-90,66},{92,-52}}, lineColor={28,108,200}), Text(
@@ -659,6 +663,7 @@ package HydrogenFuelingStationLibrary
         extends HydrogenFuelingStationLibrary.FuelingProcedure.BaseClass.FuellingProcedures;
 
         SI.Pressure p_vehicle;
+        SI.Pressure p_station;
         SI.Pressure p_end;
       //   Integer x;
 
@@ -690,7 +695,9 @@ package HydrogenFuelingStationLibrary
        end if;
 
        p_end=FP[2];
-
+      Station_port.p=p_station;
+      algorithm
+      //     assert(p_station <= FP[1], "Fuelling finished due to pressure target");
       //   if  x==0 then
       //   pressurePort.p=APRR[1];
       //   elseif x==1 then
@@ -1366,6 +1373,8 @@ package HydrogenFuelingStationLibrary
      /****************** variables *******************/
 
       SI.Mass M "Gas mass in control volume";
+        SI.Mass M_init;
+      SI.Mass M_out;
       Real drhodt;
       SI.Heat Q;
       SI.InternalEnergy U;
@@ -1386,6 +1395,7 @@ package HydrogenFuelingStationLibrary
     SI.SpecificEnthalpy e_stream;
 
     SI.Heat E_D;
+    SI.SpecificEnthalpy h_test;
 
     /****************** Initial equations *******************/
     initial equation
@@ -1399,6 +1409,8 @@ package HydrogenFuelingStationLibrary
     U=u*M;
     HeatOfCompression=V*der(p);
 
+    h_test=Medium.specificEnthalpy_pT(p=pInitial, T=TInitial);
+
     if Adiabatic == false then
     der(Q)=heatFlow.Q;
     else
@@ -1411,6 +1423,8 @@ package HydrogenFuelingStationLibrary
       p = portA.p;
       portA.h_outflow = h;
       M = V*Medium.density(medium) "Mass in cv";
+        M_init = V*Medium.density(Medium.setState_pT(pInitial, TInitial));
+      M_out = M_init-M;
      drhodt = Medium.density_derp_h(medium)*der(p)+Medium.density_derh_p(medium)*der(h)
         "Derivative of density";
 
@@ -1756,6 +1770,145 @@ package HydrogenFuelingStationLibrary
         <a href=\"../Documentation/HydrogenLibaryDocumnetation.pdf\">PhD project by Erasmus Rothuizen</a><br><br>
         </html>"));
     end Tank1_MC;
+
+    model Tank1_2 "Volume with one entrance"
+    import SI = Modelica.SIunits;
+
+     /****************** Thermodynamic property call *************************/
+    //     replaceable package Medium =
+    //      ExternalMedia.Media.CoolPropMedium annotation(Dialog(group="Gas"));
+       replaceable package Medium = ExternalMedia.Media.CoolPropMedium (onePhase=true)
+       constrainedby Modelica.Media.Interfaces.PartialMedium
+                                                   annotation (choicesAllMatching=true);
+           Medium.ThermodynamicState medium;
+           Medium.ThermodynamicState mediumStream;
+
+     /******************** Connectors *****************************/
+
+      Ports.FlowPort portA "port connection component to other components"
+        annotation (Placement(transformation(extent={{50,-10},{70,10}},    rotation=
+               0), iconTransformation(extent={{92,-10},{114,10}})));
+    //( m_flow(final start=m_flowStart))
+      Ports.HeatFlow2 heatFlow "connection to heat transfer model"
+        annotation (Placement(transformation(extent={{-112,-62},{-82,-32}}),
+            iconTransformation(extent={{-10,-48},{10,-30}})));
+      Ports.PressurePort pp "Connection for control of system"
+        annotation (Placement(transformation(extent={{-114,38},{-72,78}}),
+            iconTransformation(extent={{-12,26},{12,50}})));
+
+     /****************** General parameters *******************/
+      parameter Boolean Adiabatic = false "If true, adiabatic tank model" annotation(Dialog(group="Tank data"));
+      parameter SI.Volume V=1 "Volume of the tank" annotation(Dialog(group="Tank data"));
+
+     /******************  Initial and start values *******************/
+
+      parameter SI.Pressure pInitial=1.013e5 "Initial pressure in the tank"
+        annotation(Dialog(group="Initial Values"));
+      parameter Boolean fixedInitialPressure = true "Fixed intial pressure"
+                                annotation(Dialog(group="Initial Values"));
+
+      parameter SI.Temperature TInitial=T_amb "Initial temperature in the tank"
+        annotation(Dialog(group="Initial Values"));
+
+      parameter SI.MassFlowRate m_flowStart=0 "Initial mass flow rate"
+        annotation(Dialog(group="Initial Values"));
+
+      outer parameter SI.Temperature T_amb "Ambient temperature";
+
+     /****************** variables *******************/
+
+      SI.Mass M "Gas mass in control volume";
+        SI.Mass M_init;
+      SI.Mass M_out;
+      Real drhodt;
+      SI.Heat Q;
+      SI.InternalEnergy U;
+      SI.SpecificInternalEnergy u;
+      SI.Pressure p(start=pInitial, fixed=fixedInitialPressure);
+      SI.SpecificEnthalpy h;
+      Real HeatOfCompression "heat of compression";
+      constant Real Counter=0;
+
+    //Exergy varialbles
+    //outer SI.Pressure P_amb;
+    outer SI.SpecificEntropy s_0;
+    outer SI.SpecificEnthalpy h_0;
+    outer SI.SpecificInternalEnergy u_0;
+    SI.Heat E_tank;
+    SI.Heat E_stream;
+    SI.SpecificEnthalpy e_tank;
+    SI.SpecificEnthalpy e_stream;
+
+    SI.Heat E_D;
+
+    /****************** Initial equations *******************/
+    initial equation
+    h=Medium.specificEnthalpy_pT(pInitial, TInitial);
+
+    /****************** equations *******************/
+    equation
+
+    medium=Medium.setState_ph(p, h);
+    u=(h-p*1/Medium.density(medium));
+    U=u*M;
+    HeatOfCompression=V*der(p);
+
+    if Adiabatic == false then
+    der(Q)=heatFlow.Q;
+    else
+    der(Q)=0;
+    end if;
+
+     der(h) = 1/M*(noEvent(actualStream(portA.h_outflow))*portA.m_flow - portA.m_flow*h+Q)
+     + V*der(p) "Energy balance";
+
+      p = portA.p;
+      portA.h_outflow = h;
+      M = V*Medium.density(medium) "Mass in cv";
+        M_init = V*Medium.density(Medium.setState_pT(pInitial, TInitial));
+      M_out = M_init-M;
+     drhodt = Medium.density_derp_h(medium)*der(p)+Medium.density_derh_p(medium)*der(h)
+        "Derivative of density";
+
+     drhodt*V = portA.m_flow "Mass balance";
+
+    // Exergy
+    if portA.m_flow >= 0 then
+    mediumStream=Medium.setState_ph(p, inStream(portA.h_outflow));
+    else
+     mediumStream=Medium.setState_ph(p, h);
+    end if;
+
+    //u_0=h_0-P_amb*V;
+    e_stream=mediumStream.h-h_0-T_amb*(Medium.specificEntropy(mediumStream)-s_0);
+    e_tank=u-u_0-T_amb*(Medium.specificEntropy(medium)-s_0);
+    der(E_tank)=e_tank*abs(portA.m_flow);
+    der(E_stream)=e_stream*abs(portA.m_flow);
+    E_tank=der(Q)*(1-T_amb/medium.T)+E_stream-E_D;
+    //der(E_tank)=der(Q)*(1-T_amb/medium.T)+E_stream-E_D;
+
+    //heatFlow.Q=der(Q);
+    heatFlow.m_flow=portA.m_flow;
+    heatFlow.T=medium.T;
+    heatFlow.P=p;
+    heatFlow.Counter=Counter;
+
+    pp.p=p;
+
+      annotation (preferedView="text",Icon(coordinateSystem(
+            preserveAspectRatio=false,
+            extent={{-100,-40},{120,40}},
+            initialScale=0.1), graphics={Bitmap(extent={{-96,42},{102,-42}},
+                fileName=
+                  "Graphics/TankHorizontal.png")}),
+                                 Diagram(coordinateSystem(
+            preserveAspectRatio=false,
+            extent={{-100,-40},{120,40}},
+            initialScale=0.1), graphics),
+            Documentation(info="<html>
+        <a href=\"../Documentation/HydrogenLibaryDocumnetation.pdf\">PhD project by Erasmus Rothuizen</a><br><br>
+        </html>"));
+    end Tank1_2;
   end Tanks;
 
   package HeatTransfer
@@ -2749,6 +2902,10 @@ package HydrogenFuelingStationLibrary
      pp1.p=portA.p;
      pp2.p=portB.p;
 
+
+    //   assert(portA.p>portB.p, "Crossover pressure in reduction valve");
+
+
       annotation (
         preferedView="text",
         Documentation(info="<html>
@@ -3551,7 +3708,7 @@ For a given zeta:
 
       //Deciding which ramp rate to be used
       if fueling_method==1 and z3==0 then
-      APRR_MC/60=der(portA.p);
+      APRR_MC/60*100=der(portA.p);
           dp=0;
         portA.m_flow + portB.m_flow = 0;
       elseif fueling_method==2 and z3==0 then
@@ -3841,12 +3998,15 @@ For a tube with a given roughness
          Medium.ThermodynamicState state4;
               Medium.ThermodynamicState state5;
 
-      Ports.FlowPort hp_tank annotation (Placement(transformation(extent={{-70,30},{
-                -50,50}}), iconTransformation(extent={{-70,30},{-50,50}})));
-      Ports.FlowPort lp_tank annotation (Placement(transformation(extent={{-70,-50},
-                {-50,-30}}), iconTransformation(extent={{-70,-50},{-50,-30}})));
-      Ports.FlowPort car_tank annotation (Placement(transformation(extent={{50,
-                -10},{70,10}}), iconTransformation(extent={{50,-10},{70,10}})));
+     Ports.FlowPort hp_tank annotation (
+          Placement(transformation(extent={{-70,30},{-50,50}}),
+            iconTransformation(extent={{-70,30},{-50,50}})));
+    Ports.FlowPort lp_tank annotation (
+          Placement(transformation(extent={{-70,-50},{-50,-30}}),
+            iconTransformation(extent={{-70,-50},{-50,-30}})));
+      Ports.FlowPort car_tank annotation (
+          Placement(transformation(extent={{50,-10},{70,10}}),
+            iconTransformation(extent={{50,-10},{70,10}})));
 
     /*****Connectors******/
 
@@ -4052,7 +4212,7 @@ For a tube with a given roughness
               Diagram(coordinateSystem(preserveAspectRatio=false)));
     end Ejector_Original;
 
-    model Ejector
+    model Ejector_MKI
       import SI = Modelica.SIunits;
 
     replaceable package Medium = ExternalMedia.Media.CoolPropMedium (onePhase=true)
@@ -4065,12 +4225,15 @@ For a tube with a given roughness
          Medium.ThermodynamicState state4;
               Medium.ThermodynamicState state5;
 
-      Ports.FlowPort hp_tank annotation (Placement(transformation(extent={{-70,30},{
-                -50,50}}), iconTransformation(extent={{-70,30},{-50,50}})));
-      Ports.FlowPort lp_tank annotation (Placement(transformation(extent={{-70,-50},
-                {-50,-30}}), iconTransformation(extent={{-70,-50},{-50,-30}})));
-      Ports.FlowPort car_tank annotation (Placement(transformation(extent={{50,
-                -10},{70,10}}), iconTransformation(extent={{50,-10},{70,10}})));
+      Ports.FlowPort hp_tank annotation (
+          Placement(transformation(extent={{-70,30},{-50,50}}),
+            iconTransformation(extent={{-70,30},{-50,50}})));
+      Ports.FlowPort lp_tank annotation (
+          Placement(transformation(extent={{-70,-50},{-50,-30}}),
+            iconTransformation(extent={{-70,-50},{-50,-30}})));
+      Ports.FlowPort car_tank annotation (
+          Placement(transformation(extent={{50,-10},{70,10}}),
+            iconTransformation(extent={{50,-10},{70,10}})));
 
     /*****Connectors******/
 
@@ -4191,6 +4354,7 @@ For a tube with a given roughness
     Real M3_bis;                                                                    //Mach number after shock in mixing section if mfr_s = 0
     SI.Pressure P_cb;                                                               //Pressure at breakdown point
     SI.Temperature T_cb;                                                            //Temperature at breakdown point
+    // SI.Mass M_HP; //Mass of hydrogen coming from
 
     //------------------------------------------------------------------------------
     //                  Computation of Ejector characteristics                    //
@@ -4204,10 +4368,12 @@ For a tube with a given roughness
     // mfr s : Mass flow rate at secondary inlet
     //------------------------------------------------------------------------------
 
-      Ports.PressurePort pp1 annotation (Placement(transformation(extent={{
-                -30,30},{-10,50}}), iconTransformation(extent={{-30,30},{-10,50}})));
-      Ports.PressurePort pp2 annotation (Placement(transformation(extent={
-                {30,30},{50,50}}), iconTransformation(extent={{30,30},{50,50}})));
+      Ports.PressurePort pp1 annotation (
+          Placement(transformation(extent={{-30,30},{-10,50}}),
+            iconTransformation(extent={{-30,30},{-10,50}})));
+      Ports.PressurePort pp2 annotation (
+          Placement(transformation(extent={{30,30},{50,50}}),
+            iconTransformation(extent={{30,30},{50,50}})));
     equation
       if z1==0 then
         x=x1;
@@ -4252,7 +4418,7 @@ For a tube with a given roughness
       phi_mb = x[1,4] + x[2,4]*(1/AR) + x[3,4]*PR + x[4,4]*(1/AR)*PR + x[5,4]*(1/AR)^2 + x[6,4]*PR^2 + x[7,4]*(1/AR)^3 + x[8,4]*PR^3 + x[9,4]*PR*(1/AR)^2 + x[10,4]*(1/AR)*PR^2 + x[11,4]*((1/AR)^2)*(PR^2);
 
       //Step 1 - Resolve flow at primary nozzle
-      hp_tank.m_flow = ((hp_tank.p*At)/sqrt(T_g))*sqrt((Medium.specificHeatCapacityCp(state1)/Medium.specificHeatCapacityCv(state1))/(8.3144598/Medium.molarMass(state1)))*(2/((Medium.specificHeatCapacityCp(state1)/Medium.specificHeatCapacityCv(state1))+1))^(((Medium.specificHeatCapacityCp(state1)/Medium.specificHeatCapacityCv(state1))+1)/((Medium.specificHeatCapacityCp(state1)/Medium.specificHeatCapacityCv(state1))-1))*sqrt(n_p);
+      hp_tank.m_flow = ((hp_tank.p*At)/sqrt(T_g))*sqrt(((Medium.specificHeatCapacityCp(state1)/Medium.specificHeatCapacityCv(state1))/(8.3144598/Medium.molarMass(state1)))*(2/((Medium.specificHeatCapacityCp(state1)/Medium.specificHeatCapacityCv(state1))+1))^(((Medium.specificHeatCapacityCp(state1)/Medium.specificHeatCapacityCv(state1))+1)/((Medium.specificHeatCapacityCp(state1)/Medium.specificHeatCapacityCv(state1))-1)))*sqrt(n_p);
       P_sy = lp_tank.p/((1+(((Medium.specificHeatCapacityCp(state2)/Medium.specificHeatCapacityCv(state2))-1)/2)*(M_sy^2))^((Medium.specificHeatCapacityCp(state2)/Medium.specificHeatCapacityCv(state2))/((Medium.specificHeatCapacityCp(state2)/Medium.specificHeatCapacityCv(state2))-1)));
 
       //Step 2 - Resolve flow at secondary nozzle
@@ -4261,7 +4427,7 @@ For a tube with a given roughness
       A_py = At*(phi_p/M_py)*((1+(((Medium.specificHeatCapacityCp(state3)/Medium.specificHeatCapacityCv(state3))-1)/2)*(M_py^2))/(1+(((Medium.specificHeatCapacityCp(state3)/Medium.specificHeatCapacityCv(state3))-1)/2)))^(((Medium.specificHeatCapacityCp(state3)/Medium.specificHeatCapacityCv(state3))+1)/(2*((Medium.specificHeatCapacityCp(state3)/Medium.specificHeatCapacityCv(state3))-1)));
       A3 = pi*(R3*10^(-3))^2;
       A_sy = A3-A_py;
-      mfr_s_ref = ((lp_tank.p*A_sy)/sqrt(T_e))*sqrt((Medium.specificHeatCapacityCp(state2)/Medium.specificHeatCapacityCv(state2))/(8.3144598/Medium.molarMass(state2)))*(2/((Medium.specificHeatCapacityCp(state2)/Medium.specificHeatCapacityCv(state2))+1))^(((Medium.specificHeatCapacityCp(state2)/Medium.specificHeatCapacityCv(state2))+1)/((Medium.specificHeatCapacityCp(state2)/Medium.specificHeatCapacityCv(state2))-1))*sqrt(n_s);
+      mfr_s_ref = ((lp_tank.p*A_sy)/sqrt(T_e))*sqrt(((Medium.specificHeatCapacityCp(state2)/Medium.specificHeatCapacityCv(state2))/(8.3144598/Medium.molarMass(state2)))*(2/((Medium.specificHeatCapacityCp(state2)/Medium.specificHeatCapacityCv(state2))+1))^(((Medium.specificHeatCapacityCp(state2)/Medium.specificHeatCapacityCv(state2))+1)/((Medium.specificHeatCapacityCp(state2)/Medium.specificHeatCapacityCv(state2))-1)))*sqrt(n_s);
 
       //ER critical point
       Ucc = mfr_s_ref/hp_tank.m_flow;
@@ -4318,7 +4484,320 @@ For a tube with a given roughness
       P_cb = P3_bis*(1+(((Medium.specificHeatCapacityCp(Medium.setState_pT(P3_bis,T3_bis))/Medium.specificHeatCapacityCv(Medium.setState_pT(P3_bis,T3_bis)))-1)/2)*(M3_bis^2))^((Medium.specificHeatCapacityCp(Medium.setState_pT(P3_bis,T3_bis))/Medium.specificHeatCapacityCv(Medium.setState_pT(P3_bis,T3_bis)))/((Medium.specificHeatCapacityCp(Medium.setState_pT(P3_bis,T3_bis))/Medium.specificHeatCapacityCv(Medium.setState_pT(P3_bis,T3_bis)))-1));
       T_cb = T3_bis*(1+(((Medium.specificHeatCapacityCp(Medium.setState_pT(P3_bis,T3_bis))/Medium.specificHeatCapacityCv(Medium.setState_pT(P3_bis,T3_bis)))-1)/2)*(M3_bis^2));
 
-          if car_tank.p < P_cc then
+       if car_tank.p < P_cc then
+         lp_tank.m_flow = Ucc*hp_tank.m_flow;
+         ejects=true;
+       elseif car_tank.p < P_cb and car_tank.p >= P_cc then
+         lp_tank.m_flow = Ucc*((P_cb-car_tank.p)/(P_cb-P_cc))*hp_tank.m_flow;
+         ejects=true;
+       else
+         lp_tank.m_flow = 0;
+         ejects=false;
+       end if;
+
+    hp_tank.m_flow+lp_tank.m_flow+car_tank.m_flow=0;
+    hp_tank.m_flow*inStream(hp_tank.h_outflow)+lp_tank.m_flow*inStream(lp_tank.h_outflow)+car_tank.m_flow*car_tank.h_outflow=0;
+
+    hp_tank.h_outflow=inStream(car_tank.h_outflow);
+    lp_tank.h_outflow=inStream(car_tank.h_outflow);
+
+    //    hp_tank.p=P_py;
+    //    lp_tank.p=P_sy;
+    //    car_tank.p=P3;
+
+    pp1.p=P_cb;
+    pp2.p=car_tank.p;
+
+    //------------------------------------------------------------------------------
+
+        annotation (Icon(coordinateSystem(preserveAspectRatio=false), graphics={
+              Rectangle(extent={{-60,40},{60,-40}}, lineColor={28,108,200})}),
+              Diagram(coordinateSystem(preserveAspectRatio=false)));
+    end Ejector_MKI;
+
+    model Ejector_MKII
+
+      import SI = Modelica.SIunits;
+
+    replaceable package Medium = ExternalMedia.Media.CoolPropMedium (onePhase=true)
+       constrainedby Modelica.Media.Interfaces.PartialMedium
+                                                   annotation (choicesAllMatching=true);
+
+         Medium.ThermodynamicState state1;
+         Medium.ThermodynamicState state2;
+              Medium.ThermodynamicState state3;
+         Medium.ThermodynamicState state4;
+              Medium.ThermodynamicState state5;
+
+      Ports.FlowPort hp_tank annotation (
+          Placement(transformation(extent={{-70,30},{-50,50}}),
+            iconTransformation(extent={{-70,30},{-50,50}})));
+      Ports.FlowPort lp_tank annotation (
+          Placement(transformation(extent={{-70,-50},{-50,-30}}),
+            iconTransformation(extent={{-70,-50},{-50,-30}})));
+      Ports.FlowPort car_tank annotation (
+          Placement(transformation(extent={{50,-10},{70,10}}),
+            iconTransformation(extent={{50,-10},{70,10}})));
+
+    /*****Connectors******/
+
+    //------------------------------------------------------------------------------
+    //                            Fixed parameters                                //
+    //------------------------------------------------------------------------------
+
+    final constant Real pi = Modelica.Constants.pi;
+    parameter SI.Volume V_tank = 0.13;                                              //Initial Volume of the vehicle tank
+    SI.Temperature T_g;                                        //Fixed temperature in primary tank
+    SI.Temperature T_e;
+    parameter Real M_sy = 1;                                                        //Mach number of secondary flow at section Y                                      //Fixed temperature in secondary tank
+    // parameter SI.Pressure hp_tank.p = 900e5;                                              //Fixed pressure in primary tank
+    // parameter SI.Pressure lp_tank.p = 300e5;                                              //Fixed pressure in secondary tank
+    parameter Real n_p1 = 0.7948 annotation(Dialog(group="Input E1"));                                                    //Efficiency of the nozzle **********CHANGE
+    parameter Real AR1 = 7.5 annotation(Dialog(group="Input E1"));                                                        //Area contraction, nozzle-outlet to nozzle-throat **********CHANGE
+    parameter SI.Length Rt1 = 0.2 annotation(Dialog(group="Input E1"));                                                   //Radius of the nozzle throat **********CHANGE
+    //Coefficients used in efficiencies equations
+    parameter Real x1[11,4] = {{0.859156785292111, 0.471225255347873, 0.792236809170210, 0.159399371120077},
+                              {-2.01141619433123, 0.885659386208346, 1.46915650169406, 5.53327718525364},
+                              {0.00117671237415707, 0.0631948469254755, -0.00569534345486310, 0.0323154099222281},
+                              {0.205591104529188, -0.130030496446621, 2.08048765552530, -2.47216726629143},
+                              {-3.49336420859518, 0.509114369606719, -19.5325192765713, -18.8512097807949},
+                              {-0.142212203903594, -0.0258751701200781, -0.136785587741012, 0.000362946415016179},
+                              {8.66981427330333, -0.456551787664214, 56.0034424191637, 21.6199814918094},
+                              {-0.118706288648623, -0.0320951162543360, -0.113038765874760, -0.00508344630758247},
+                              {0.712313239334694, -1.88456474800665, -8.68446378338863, 4.13193082702749},
+                              {0.506561952829537, -0.255968644740241, 1.48888029598871, -2.98235225278511},
+                              {1.17582173421149, -1.65532301827329, -3.98163327339508, 6.58514398598883}} annotation(Dialog(group="Input E1")); //**********CHANGE
+
+    parameter Real n_p2 = 0.7948
+                                annotation(Dialog(group="Input E2"));                                                    //Efficiency of the nozzle **********CHANGE
+    parameter Real AR2 = 7.5
+                            annotation(Dialog(group="Input E2"));                                                        //Area contraction, nozzle-outlet to nozzle-throat **********CHANGE
+    parameter SI.Length Rt2 = 0.2
+                                 annotation(Dialog(group="Input E2"));                                                   //Radius of the nozzle throat **********CHANGE
+    //Coefficients used in efficiencies equations
+    parameter Real x2[11,4] = {{0.859156785292111, 0.471225255347873, 0.792236809170210, 0.159399371120077},
+                              {-2.01141619433123, 0.885659386208346, 1.46915650169406, 5.53327718525364},
+                              {0.00117671237415707, 0.0631948469254755, -0.00569534345486310, 0.0323154099222281},
+                              {0.205591104529188, -0.130030496446621, 2.08048765552530, -2.47216726629143},
+                              {-3.49336420859518, 0.509114369606719, -19.5325192765713, -18.8512097807949},
+                              {-0.142212203903594, -0.0258751701200781, -0.136785587741012, 0.000362946415016179},
+                              {8.66981427330333, -0.456551787664214, 56.0034424191637, 21.6199814918094},
+                              {-0.118706288648623, -0.0320951162543360, -0.113038765874760, -0.00508344630758247},
+                              {0.712313239334694, -1.88456474800665, -8.68446378338863, 4.13193082702749},
+                              {0.506561952829537, -0.255968644740241, 1.48888029598871, -2.98235225278511},
+                              {1.17582173421149, -1.65532301827329, -3.98163327339508, 6.58514398598883}}
+                                                                                                         annotation(Dialog(group="Input E2")); //**********CHANGE
+
+    parameter Real n_p3 = 0.7948 annotation(Dialog(group="Input E3"));                                                    //Efficiency of the nozzle **********CHANGE
+    parameter Real AR3 = 7.5 annotation(Dialog(group="Input E3"));                                                        //Area contraction, nozzle-outlet to nozzle-throat **********CHANGE
+    parameter SI.Length Rt3 = 0.2 annotation(Dialog(group="Input E3"));                                                   //Radius of the nozzle throat **********CHANGE
+    //Coefficients used in efficiencies equations
+    parameter Real x3[11,4] = {{0.859156785292111, 0.471225255347873, 0.792236809170210, 0.159399371120077},
+                              {-2.01141619433123, 0.885659386208346, 1.46915650169406, 5.53327718525364},
+                              {0.00117671237415707, 0.0631948469254755, -0.00569534345486310, 0.0323154099222281},
+                              {0.205591104529188, -0.130030496446621, 2.08048765552530, -2.47216726629143},
+                              {-3.49336420859518, 0.509114369606719, -19.5325192765713, -18.8512097807949},
+                              {-0.142212203903594, -0.0258751701200781, -0.136785587741012, 0.000362946415016179},
+                              {8.66981427330333, -0.456551787664214, 56.0034424191637, 21.6199814918094},
+                              {-0.118706288648623, -0.0320951162543360, -0.113038765874760, -0.00508344630758247},
+                              {0.712313239334694, -1.88456474800665, -8.68446378338863, 4.13193082702749},
+                              {0.506561952829537, -0.255968644740241, 1.48888029598871, -2.98235225278511},
+                              {1.17582173421149, -1.65532301827329, -3.98163327339508, 6.58514398598883}} annotation(Dialog(group="Input E3")); //**********CHANGE
+
+     outer Integer z1;
+     SI.Length Rt( start=Rt1);
+     Real x[11,4]( start=x1);
+     Real AR( start=AR1);
+     Real n_p( start=n_p1);
+     Boolean ejects( start=false);
+
+    //------------------------------------------------------------------------------
+    //                          Variables for ejector                             //
+    //------------------------------------------------------------------------------
+    SI.Length R3;                                                                   //Radius of mixing chamber
+    Real PR;                                                                        //Pressure ratio lp_tank.p/hp_tank.p
+    SI.Area At;                                                                     //Area of the nozzle throat
+    Real n_s;                                                                       //Secondary nozzle efficiency
+    Real phi_p;                                                                     //Viscous loss between primary and secondary streams
+    Real phi_m;                                                                     //Loss in the streams mixing
+    Real phi_mb;                                                                    //Loss in the streams mixing when lp_tank.m_flow = 0
+    // SI.MassFlowRate hp_tank.m_flow;                                                          //Mass flow rate primary
+    // SI.MassFlowRate mfr_s;                                                          //Mass flow rate secondary
+    SI.MassFlowRate mfr_s_ref;                                                          //Mass flow rate secondary
+
+    SI.Pressure P_py;                                                               //Pressure of primary flow at section Y
+    SI.Pressure P_sy;                                                               //Pressure of secondary flow at section Y
+    Real M_py;                                                                      //Mach number of primary flow at section Y
+    SI.Area A_py;                                                                   //Area of primary flow at section Y
+    SI.Area A_sy;                                                                   //Area of secondary flow at section Y
+    SI.Area A3;                                                                     //Area of mixing section
+    Real Ucc;                                                                       //Entrainment ratio at critical point
+    SI.Temperature T_py;                                                            //Temperature of primary flow at section Y
+    SI.Temperature T_sy;                                                            //Temperature of secondary flow at section Y
+    SI.Velocity V_py;                                                               //Velocity of primary flow at section Y
+    SI.Velocity V_sy;                                                               //Velocity of secondary flow at section Y
+    SI.Velocity V_m;                                                                //Velocity of mixing section
+    SI.Pressure P_m;                                                                //Pressure of mixing section
+    SI.Temperature T_m;                                                             //Temperature of mixing section
+    Real M_m;                                                                       //Mach number of mixing section
+    SI.Pressure P3;                                                                 //Pressure after shock in mixing section
+    //  parameter SI.Pressure P_out=5e7;                                                                 //Pressure after shock in mixing section
+
+    SI.Temperature T3;                                                              //Temperature after shock in mixing section
+    Real M3;                                                                        //Mach number after shock in mixing section
+    SI.Pressure P_cc;                                                               //Pressure at critical point
+    SI.Temperature T_cc;                                                            //Temperature at critical point
+    Real  M_py_bis;                                                                 //Mach number at section Y if mfr_s = 0
+    SI.Temperature T_py_bis;                                                        //Temperature at section Y if mfr_s = 0
+    SI.Velocity V_py_bis;                                                           //Velocity at section Y if mfr_s = 0
+    SI.Velocity V_m_bis;                                                            //Velocity of mixing section if mfr_s = 0
+    SI.Temperature T_m_bis;                                                         //Temperature of mixing section if mfr_s = 0
+    Real M_m_bis;                                                                   //Mach number of mixing section if mfr_s = 0
+    SI.Pressure P3_bis;                                                             //Pressure after shock in mixing section if mfr_s = 0
+    SI.Temperature T3_bis;                                                          //Temperature after shock in mixing section if mfr_s = 0
+    Real M3_bis;                                                                    //Mach number after shock in mixing section if mfr_s = 0
+    SI.Pressure P_cb;                                                               //Pressure at breakdown point
+    SI.Temperature T_cb;                                                            //Temperature at breakdown point
+    // SI.Mass M_HP; //Mass of hydrogen coming from
+
+    //------------------------------------------------------------------------------
+    //                  Computation of Ejector characteristics                    //
+    //------------------------------------------------------------------------------
+    // Pcc : Critical pressure
+    // Tcc : Critical temperature
+    // Pcb : Breakdown pressure
+    // Pcb : Breakdown temperature
+    // Ucc : Critical entrainment ratio
+    // mfr p : Mass flow rate at primary inlet
+    // mfr s : Mass flow rate at secondary inlet
+    //------------------------------------------------------------------------------
+
+      Ports.PressurePort pp1 annotation (
+          Placement(transformation(extent={{-30,30},{-10,50}}),
+            iconTransformation(extent={{-30,30},{-10,50}})));
+      Ports.PressurePort pp2 annotation (
+          Placement(transformation(extent={{30,30},{50,50}}),
+            iconTransformation(extent={{30,30},{50,50}})));
+    equation
+      if z1==0 then
+        x=x1;
+        Rt=Rt1;
+        AR=AR1;
+        n_p=n_p1;
+      elseif z1==1 then
+        x=x1;
+        Rt=Rt1;
+        AR=AR1;
+        n_p=n_p1;
+      elseif z1==2 then
+        x=x2;
+        Rt=Rt2;
+        AR=AR2;
+        n_p=n_p2;
+      elseif z1==3 then
+        x=x3;
+        Rt=Rt3;
+        AR=AR3;
+        n_p=n_p3;
+      else
+        x=x1;
+        Rt=Rt1;
+        AR=AR1;
+        n_p=n_p1;
+        end if;
+
+     state1 = Medium.setState_ph(hp_tank.p, inStream(hp_tank.h_outflow));
+     state2 = Medium.setState_ph(lp_tank.p, inStream(lp_tank.h_outflow));
+     state3=  Medium.setState_ph(P_py, inStream(hp_tank.h_outflow));
+     state4=  Medium.setState_pT(P_py, T_py);
+     state5=  Medium.setState_pT(P_sy, T_sy);
+
+     T_g=Medium.temperature(state1);
+     T_e=Medium.temperature(state2);
+
+      //Geometrical parameters
+      R3 = Rt*sqrt(AR);
+      At = pi*(Rt*10^(-3))^2;
+      PR = lp_tank.p/hp_tank.p;
+
+      //Definition of efficiencies
+      n_s    = x[1,1] + x[2,1]*(1/AR) + x[3,1]*PR + x[4,1]*(1/AR)*PR + x[5,1]*(1/AR)^2 + x[6,1]*PR^2 + x[7,1]*(1/AR)^3 + x[8,1]*PR^3 + x[9,1]*PR*(1/AR)^2 + x[10,1]*(1/AR)*PR^2 + x[11,1]*((1/AR)^2)*(PR^2);
+      phi_p  = x[1,2] + x[2,2]*(1/AR) + x[3,2]*PR + x[4,2]*(1/AR)*PR + x[5,2]*(1/AR)^2 + x[6,2]*PR^2 + x[7,2]*(1/AR)^3 + x[8,2]*PR^3 + x[9,2]*PR*(1/AR)^2 + x[10,2]*(1/AR)*PR^2 + x[11,2]*((1/AR)^2)*(PR^2);
+      phi_m  = x[1,3] + x[2,3]*(1/AR) + x[3,3]*PR + x[4,3]*(1/AR)*PR + x[5,3]*(1/AR)^2 + x[6,3]*PR^2 + x[7,3]*(1/AR)^3 + x[8,3]*PR^3 + x[9,3]*PR*(1/AR)^2 + x[10,3]*(1/AR)*PR^2 + x[11,3]*((1/AR)^2)*(PR^2);
+      phi_mb = x[1,4] + x[2,4]*(1/AR) + x[3,4]*PR + x[4,4]*(1/AR)*PR + x[5,4]*(1/AR)^2 + x[6,4]*PR^2 + x[7,4]*(1/AR)^3 + x[8,4]*PR^3 + x[9,4]*PR*(1/AR)^2 + x[10,4]*(1/AR)*PR^2 + x[11,4]*((1/AR)^2)*(PR^2);
+
+      //Step 1 - Resolve flow at primary nozzle
+      hp_tank.m_flow = ((hp_tank.p*At)/sqrt(T_g))*sqrt(((Medium.specificHeatCapacityCp(state1)/Medium.specificHeatCapacityCv(state1))/(8.3144598/Medium.molarMass(state1)))*(2/((Medium.specificHeatCapacityCp(state1)/Medium.specificHeatCapacityCv(state1))+1))^(((Medium.specificHeatCapacityCp(state1)/Medium.specificHeatCapacityCv(state1))+1)/((Medium.specificHeatCapacityCp(state1)/Medium.specificHeatCapacityCv(state1))-1)))*sqrt(n_p);
+      P_sy = lp_tank.p/((1+(((Medium.specificHeatCapacityCp(state2)/Medium.specificHeatCapacityCv(state2))-1)/2)*(M_sy^2))^((Medium.specificHeatCapacityCp(state2)/Medium.specificHeatCapacityCv(state2))/((Medium.specificHeatCapacityCp(state2)/Medium.specificHeatCapacityCv(state2))-1)));
+
+      //Step 2 - Resolve flow at secondary nozzle
+      P_py = P_sy;
+      M_py = sqrt((2/((Medium.specificHeatCapacityCp(state3)/Medium.specificHeatCapacityCv(state3))-1))*(((hp_tank.p/P_py)^(((Medium.specificHeatCapacityCp(state3)/Medium.specificHeatCapacityCv(state3))-1)/(Medium.specificHeatCapacityCp(state3)/Medium.specificHeatCapacityCv(state3))))-1));
+      A_py = At*(phi_p/M_py)*((1+(((Medium.specificHeatCapacityCp(state3)/Medium.specificHeatCapacityCv(state3))-1)/2)*(M_py^2))/(1+(((Medium.specificHeatCapacityCp(state3)/Medium.specificHeatCapacityCv(state3))-1)/2)))^(((Medium.specificHeatCapacityCp(state3)/Medium.specificHeatCapacityCv(state3))+1)/(2*((Medium.specificHeatCapacityCp(state3)/Medium.specificHeatCapacityCv(state3))-1)));
+      A3 = pi*(R3*10^(-3))^2;
+      A_sy = A3-A_py;
+      mfr_s_ref = ((lp_tank.p*A_sy)/sqrt(T_e))*sqrt(((Medium.specificHeatCapacityCp(state2)/Medium.specificHeatCapacityCv(state2))/(8.3144598/Medium.molarMass(state2)))*(2/((Medium.specificHeatCapacityCp(state2)/Medium.specificHeatCapacityCv(state2))+1))^(((Medium.specificHeatCapacityCp(state2)/Medium.specificHeatCapacityCv(state2))+1)/((Medium.specificHeatCapacityCp(state2)/Medium.specificHeatCapacityCv(state2))-1)))*sqrt(n_s);
+
+      //ER critical point
+      if z1 == 0 then
+      Ucc = 0;
+      else
+      Ucc = mfr_s_ref/hp_tank.m_flow;
+      end if;
+
+      //Step 3 - Resolve flow at Y section
+      T_py = T_g/(1+(((Medium.specificHeatCapacityCp(state1)/Medium.specificHeatCapacityCv(state1))-1)/2)*(M_py^2));
+      T_sy = T_e/(1+(((Medium.specificHeatCapacityCp(state2)/Medium.specificHeatCapacityCv(state2))-1)/2)*(M_sy^2));
+      V_py = M_py*sqrt((Medium.specificHeatCapacityCp(state4)/Medium.specificHeatCapacityCv(state4))*(8.3144598/Medium.molarMass(state4))*T_py);
+      V_sy = M_sy*sqrt((Medium.specificHeatCapacityCp(state5)/Medium.specificHeatCapacityCv(state5))*(8.3144598/Medium.molarMass(state5))*T_sy);
+
+      //Step 4 - Resolve flow at mixing section
+      V_m = phi_m*(hp_tank.m_flow*V_py+mfr_s_ref*V_sy)/(hp_tank.m_flow+mfr_s_ref);
+      P_m = P_sy;
+      T_m = (((hp_tank.m_flow*(Medium.specificHeatCapacityCp(Medium.setState_pT(hp_tank.p,(T_py+T_sy)/2))*T_py+((V_py^2)/2))+mfr_s_ref*(Medium.specificHeatCapacityCp(Medium.setState_pT(hp_tank.p,(T_py+T_sy)/2))*T_sy+((V_sy^2)/2)))/(hp_tank.m_flow+mfr_s_ref))-((V_m^2)/2))/Medium.specificHeatCapacityCp(Medium.setState_pT(hp_tank.p,(T_py+T_sy)/2));
+      M_m = V_m/sqrt((Medium.specificHeatCapacityCp(Medium.setState_pT(P_m,T_m))/Medium.specificHeatCapacityCv(Medium.setState_pT(P_m,T_m)))*(8.3144598/Medium.molarMass(Medium.setState_pT(P_m,T_m)))*T_m);
+
+      //Step 5 - Resolve flow at mixing section after shock
+      if M_m >= 1 then //In case of a shock
+        P3 = P_m*(1+((2*(Medium.specificHeatCapacityCp(Medium.setState_pT(P_m,T_m))/Medium.specificHeatCapacityCv(Medium.setState_pT(P_m,T_m))))/((Medium.specificHeatCapacityCp(Medium.setState_pT(P_m,T_m))/Medium.specificHeatCapacityCv(Medium.setState_pT(P_m,T_m)))+1))*((M_m^2)-1));
+        M3 = sqrt((1+(((Medium.specificHeatCapacityCp(Medium.setState_pT(P_m,T_m))/Medium.specificHeatCapacityCv(Medium.setState_pT(P_m,T_m)))-1)/2)*(M_m^2))/((Medium.specificHeatCapacityCp(Medium.setState_pT(P_m,T_m))/Medium.specificHeatCapacityCv(Medium.setState_pT(P_m,T_m)))*(M_m^2)-(((Medium.specificHeatCapacityCp(Medium.setState_pT(P_m,T_m))/Medium.specificHeatCapacityCv(Medium.setState_pT(P_m,T_m)))-1)/2)));
+        T3 = T_m*((2*(Medium.specificHeatCapacityCp(Medium.setState_pT(P_m,T_m))/Medium.specificHeatCapacityCv(Medium.setState_pT(P_m,T_m)))*(M_m^2)-((Medium.specificHeatCapacityCp(Medium.setState_pT(P_m,T_m))/Medium.specificHeatCapacityCv(Medium.setState_pT(P_m,T_m)))-1))*(((Medium.specificHeatCapacityCp(Medium.setState_pT(P_m,T_m))/Medium.specificHeatCapacityCv(Medium.setState_pT(P_m,T_m)))-1)*(M_m^2)+2))/((M_m^2)*((Medium.specificHeatCapacityCp(Medium.setState_pT(P_m,T_m))/Medium.specificHeatCapacityCv(Medium.setState_pT(P_m,T_m)))+1)^2);
+      else //In case of no shock
+        P3 = P_m;
+        M3 = M_m;
+        T3 = T_m;
+      end if;
+
+      //Step 6 - Resolve flow at ejector outlet
+      P_cc = P3*(1+(((Medium.specificHeatCapacityCp(Medium.setState_pT(P3,T3))/Medium.specificHeatCapacityCv(Medium.setState_pT(P3,T3)))-1)/2)*(M3^2))^((Medium.specificHeatCapacityCp(Medium.setState_pT(P3,T3))/Medium.specificHeatCapacityCv(Medium.setState_pT(P3,T3)))/((Medium.specificHeatCapacityCp(Medium.setState_pT(P3,T3))/Medium.specificHeatCapacityCv(Medium.setState_pT(P3,T3)))-1));
+      T_cc = T3*(1+(((Medium.specificHeatCapacityCp(Medium.setState_pT(P3,T3))/Medium.specificHeatCapacityCv(Medium.setState_pT(P3,T3)))-1)/2)*(M3^2));
+
+      //Step 7 - Resolve flow at section Y in case mfr_s_ref = 0
+      M_py_bis = sqrt((2/((Medium.specificHeatCapacityCp(state1)/Medium.specificHeatCapacityCv(state1))-1))*((hp_tank.p/lp_tank.p)^(((Medium.specificHeatCapacityCp(state1)/Medium.specificHeatCapacityCv(state1))-1)/(Medium.specificHeatCapacityCp(state1)/Medium.specificHeatCapacityCv(state1)))-1));
+      T_py_bis = T_g/(1+(M_py_bis^2)*((Medium.specificHeatCapacityCp(state1)/Medium.specificHeatCapacityCv(state1))-1)/2);
+      V_py_bis = M_py_bis*sqrt((Medium.specificHeatCapacityCp(Medium.setState_pT(lp_tank.p,T_py_bis))/Medium.specificHeatCapacityCv(Medium.setState_pT(lp_tank.p,T_py_bis)))*(8.3144598/Medium.molarMass(state5))*T_py_bis);
+
+      //Step 8 - Resolve flow at mixing section in case mfr_s_ref = 0
+      V_m_bis = phi_mb*V_py_bis;
+      T_m_bis = (Medium.specificHeatCapacityCp(Medium.setState_pT(lp_tank.p,T_py_bis))*T_py_bis+((V_py_bis^2)/2)-((V_m_bis^2)/2))/Medium.specificHeatCapacityCp(Medium.setState_pT(lp_tank.p,T_py_bis));
+      M_m_bis = V_m_bis/sqrt((Medium.specificHeatCapacityCp(Medium.setState_pT(lp_tank.p,T_m_bis))/Medium.specificHeatCapacityCv(Medium.setState_pT(lp_tank.p,T_m_bis)))*(8.3144598/Medium.molarMass(Medium.setState_pT(lp_tank.p,T_m_bis)))*T_m_bis);
+
+      //Step 9 - Resolve flow at mixing section after shock in case mfr_s_ref = 0
+      if M_m_bis >= 1 then //In case of a shock
+        P3_bis = lp_tank.p*(1+((2*(Medium.specificHeatCapacityCp(Medium.setState_pT(lp_tank.p,T_m_bis))/Medium.specificHeatCapacityCv(Medium.setState_pT(lp_tank.p,T_m_bis))))/((Medium.specificHeatCapacityCp(Medium.setState_pT(lp_tank.p,T_m_bis))/Medium.specificHeatCapacityCv(Medium.setState_pT(lp_tank.p,T_m_bis)))+1))*((M_m_bis^2)-1));
+        M3_bis = sqrt((1+(((Medium.specificHeatCapacityCp(Medium.setState_pT(lp_tank.p,T_m_bis))/Medium.specificHeatCapacityCv(Medium.setState_pT(lp_tank.p,T_m_bis)))-1)/2)*(M_m_bis^2))/((Medium.specificHeatCapacityCp(Medium.setState_pT(lp_tank.p,T_m_bis))/Medium.specificHeatCapacityCv(Medium.setState_pT(lp_tank.p,T_m_bis)))*(M_m_bis^2)-(((Medium.specificHeatCapacityCp(Medium.setState_pT(lp_tank.p,T_m_bis))/Medium.specificHeatCapacityCv(Medium.setState_pT(lp_tank.p,T_m_bis)))-1)/2)));
+        T3_bis = T_m_bis*((2*(Medium.specificHeatCapacityCp(Medium.setState_pT(lp_tank.p,T_m_bis))/Medium.specificHeatCapacityCv(Medium.setState_pT(lp_tank.p,T_m_bis)))*(M_m_bis^2)-((Medium.specificHeatCapacityCp(Medium.setState_pT(lp_tank.p,T_m_bis))/Medium.specificHeatCapacityCv(Medium.setState_pT(lp_tank.p,T_m_bis)))-1))*(((Medium.specificHeatCapacityCp(Medium.setState_pT(lp_tank.p,T_m_bis))/Medium.specificHeatCapacityCv(Medium.setState_pT(lp_tank.p,T_m_bis)))-1)*(M_m_bis^2)+2))/((M_m_bis^2)*((Medium.specificHeatCapacityCp(Medium.setState_pT(lp_tank.p,T_m_bis))/Medium.specificHeatCapacityCv(Medium.setState_pT(lp_tank.p,T_m_bis)))+1)^2);
+      else //In case of no shock
+        P3_bis = lp_tank.p;
+        M3_bis = M_m_bis;
+        T3_bis = T_m_bis;
+      end if;
+
+      //Step 10 - Resolve flow at ejector outlet if mfr_s_ref = 0
+      P_cb = P3_bis*(1+(((Medium.specificHeatCapacityCp(Medium.setState_pT(P3_bis,T3_bis))/Medium.specificHeatCapacityCv(Medium.setState_pT(P3_bis,T3_bis)))-1)/2)*(M3_bis^2))^((Medium.specificHeatCapacityCp(Medium.setState_pT(P3_bis,T3_bis))/Medium.specificHeatCapacityCv(Medium.setState_pT(P3_bis,T3_bis)))/((Medium.specificHeatCapacityCp(Medium.setState_pT(P3_bis,T3_bis))/Medium.specificHeatCapacityCv(Medium.setState_pT(P3_bis,T3_bis)))-1));
+      T_cb = T3_bis*(1+(((Medium.specificHeatCapacityCp(Medium.setState_pT(P3_bis,T3_bis))/Medium.specificHeatCapacityCv(Medium.setState_pT(P3_bis,T3_bis)))-1)/2)*(M3_bis^2));
+
+        if car_tank.p < P_cc then
           lp_tank.m_flow = Ucc*hp_tank.m_flow;
           ejects=true;
         elseif car_tank.p < P_cb and car_tank.p >= P_cc then
@@ -4327,13 +4806,13 @@ For a tube with a given roughness
         else
           lp_tank.m_flow = 0;
           ejects=false;
-          end if;
+        end if;
 
     hp_tank.m_flow+lp_tank.m_flow+car_tank.m_flow=0;
     hp_tank.m_flow*inStream(hp_tank.h_outflow)+lp_tank.m_flow*inStream(lp_tank.h_outflow)+car_tank.m_flow*car_tank.h_outflow=0;
 
-     hp_tank.h_outflow=inStream(car_tank.h_outflow);
-     lp_tank.h_outflow=inStream(car_tank.h_outflow);
+    hp_tank.h_outflow=inStream(car_tank.h_outflow);
+    lp_tank.h_outflow=inStream(car_tank.h_outflow);
 
     //    hp_tank.p=P_py;
     //    lp_tank.p=P_sy;
@@ -4347,7 +4826,314 @@ For a tube with a given roughness
         annotation (Icon(coordinateSystem(preserveAspectRatio=false), graphics={
               Rectangle(extent={{-60,40},{60,-40}}, lineColor={28,108,200})}),
               Diagram(coordinateSystem(preserveAspectRatio=false)));
-    end Ejector;
+    end Ejector_MKII;
+
+    model Ejector_one_inlet
+      import SI = Modelica.SIunits;
+
+    replaceable package Medium = ExternalMedia.Media.CoolPropMedium (onePhase=true)
+       constrainedby Modelica.Media.Interfaces.PartialMedium
+                                                   annotation (choicesAllMatching=true);
+
+         Medium.ThermodynamicState state1;
+         Medium.ThermodynamicState state2;
+              Medium.ThermodynamicState state3;
+         Medium.ThermodynamicState state4;
+              Medium.ThermodynamicState state5;
+
+      Ports.FlowPort hp_tank annotation (
+          Placement(transformation(extent={{-70,30},{-50,50}}),
+            iconTransformation(extent={{-70,30},{-50,50}})));
+      Ports.FlowPort lp_tank annotation (
+          Placement(transformation(extent={{-70,-50},{-50,-30}}),
+            iconTransformation(extent={{-70,-50},{-50,-30}})));
+      Ports.FlowPort car_tank annotation (
+          Placement(transformation(extent={{50,-10},{70,10}}),
+            iconTransformation(extent={{50,-10},{70,10}})));
+
+    /*****Connectors******/
+
+    //------------------------------------------------------------------------------
+    //                            Fixed parameters                                //
+    //------------------------------------------------------------------------------
+
+    final constant Real pi = Modelica.Constants.pi;
+    parameter SI.Volume V_tank = 0.13;                                              //Initial Volume of the vehicle tank
+    SI.Temperature T_g;                                        //Fixed temperature in primary tank
+    SI.Temperature T_e;
+    parameter Real M_sy = 1;                                                        //Mach number of secondary flow at section Y                                      //Fixed temperature in secondary tank
+    // parameter SI.Pressure hp_tank.p = 900e5;                                              //Fixed pressure in primary tank
+    // parameter SI.Pressure lp_tank.p = 300e5;                                              //Fixed pressure in secondary tank
+    parameter Real n_p1 = 0.7948 annotation(Dialog(group="Input E1"));                                                    //Efficiency of the nozzle **********CHANGE
+    parameter Real AR1 = 7.5 annotation(Dialog(group="Input E1"));                                                        //Area contraction, nozzle-outlet to nozzle-throat **********CHANGE
+    parameter SI.Length Rt1 = 0.2 annotation(Dialog(group="Input E1"));                                                   //Radius of the nozzle throat **********CHANGE
+    //Coefficients used in efficiencies equations
+    parameter Real x1[11,4] = {{0.859156785292111, 0.471225255347873, 0.792236809170210, 0.159399371120077},
+                              {-2.01141619433123, 0.885659386208346, 1.46915650169406, 5.53327718525364},
+                              {0.00117671237415707, 0.0631948469254755, -0.00569534345486310, 0.0323154099222281},
+                              {0.205591104529188, -0.130030496446621, 2.08048765552530, -2.47216726629143},
+                              {-3.49336420859518, 0.509114369606719, -19.5325192765713, -18.8512097807949},
+                              {-0.142212203903594, -0.0258751701200781, -0.136785587741012, 0.000362946415016179},
+                              {8.66981427330333, -0.456551787664214, 56.0034424191637, 21.6199814918094},
+                              {-0.118706288648623, -0.0320951162543360, -0.113038765874760, -0.00508344630758247},
+                              {0.712313239334694, -1.88456474800665, -8.68446378338863, 4.13193082702749},
+                              {0.506561952829537, -0.255968644740241, 1.48888029598871, -2.98235225278511},
+                              {1.17582173421149, -1.65532301827329, -3.98163327339508, 6.58514398598883}} annotation(Dialog(group="Input E1")); //**********CHANGE
+
+    parameter Real n_p2 = 0.7948
+                                annotation(Dialog(group="Input E2"));                                                    //Efficiency of the nozzle **********CHANGE
+    parameter Real AR2 = 7.5
+                            annotation(Dialog(group="Input E2"));                                                        //Area contraction, nozzle-outlet to nozzle-throat **********CHANGE
+    parameter SI.Length Rt2 = 0.2
+                                 annotation(Dialog(group="Input E2"));                                                   //Radius of the nozzle throat **********CHANGE
+    //Coefficients used in efficiencies equations
+    parameter Real x2[11,4] = {{0.859156785292111, 0.471225255347873, 0.792236809170210, 0.159399371120077},
+                              {-2.01141619433123, 0.885659386208346, 1.46915650169406, 5.53327718525364},
+                              {0.00117671237415707, 0.0631948469254755, -0.00569534345486310, 0.0323154099222281},
+                              {0.205591104529188, -0.130030496446621, 2.08048765552530, -2.47216726629143},
+                              {-3.49336420859518, 0.509114369606719, -19.5325192765713, -18.8512097807949},
+                              {-0.142212203903594, -0.0258751701200781, -0.136785587741012, 0.000362946415016179},
+                              {8.66981427330333, -0.456551787664214, 56.0034424191637, 21.6199814918094},
+                              {-0.118706288648623, -0.0320951162543360, -0.113038765874760, -0.00508344630758247},
+                              {0.712313239334694, -1.88456474800665, -8.68446378338863, 4.13193082702749},
+                              {0.506561952829537, -0.255968644740241, 1.48888029598871, -2.98235225278511},
+                              {1.17582173421149, -1.65532301827329, -3.98163327339508, 6.58514398598883}}
+                                                                                                         annotation(Dialog(group="Input E2")); //**********CHANGE
+
+    parameter Real n_p3 = 0.7948 annotation(Dialog(group="Input E3"));                                                    //Efficiency of the nozzle **********CHANGE
+    parameter Real AR3 = 7.5 annotation(Dialog(group="Input E3"));                                                        //Area contraction, nozzle-outlet to nozzle-throat **********CHANGE
+    parameter SI.Length Rt3 = 0.2 annotation(Dialog(group="Input E3"));                                                   //Radius of the nozzle throat **********CHANGE
+    //Coefficients used in efficiencies equations
+    parameter Real x3[11,4] = {{0.859156785292111, 0.471225255347873, 0.792236809170210, 0.159399371120077},
+                              {-2.01141619433123, 0.885659386208346, 1.46915650169406, 5.53327718525364},
+                              {0.00117671237415707, 0.0631948469254755, -0.00569534345486310, 0.0323154099222281},
+                              {0.205591104529188, -0.130030496446621, 2.08048765552530, -2.47216726629143},
+                              {-3.49336420859518, 0.509114369606719, -19.5325192765713, -18.8512097807949},
+                              {-0.142212203903594, -0.0258751701200781, -0.136785587741012, 0.000362946415016179},
+                              {8.66981427330333, -0.456551787664214, 56.0034424191637, 21.6199814918094},
+                              {-0.118706288648623, -0.0320951162543360, -0.113038765874760, -0.00508344630758247},
+                              {0.712313239334694, -1.88456474800665, -8.68446378338863, 4.13193082702749},
+                              {0.506561952829537, -0.255968644740241, 1.48888029598871, -2.98235225278511},
+                              {1.17582173421149, -1.65532301827329, -3.98163327339508, 6.58514398598883}} annotation(Dialog(group="Input E3")); //**********CHANGE
+
+     outer Integer z1;
+     SI.Length Rt( start=Rt1);
+     Real x[11,4]( start=x1);
+     Real AR( start=AR1);
+     Real n_p( start=n_p1);
+     Boolean ejects( start=false);
+
+    //------------------------------------------------------------------------------
+    //                          Variables for ejector                             //
+    //------------------------------------------------------------------------------
+    SI.Length R3;                                                                   //Radius of mixing chamber
+    Real PR;                                                                        //Pressure ratio lp_tank.p/hp_tank.p
+    SI.Area At;                                                                     //Area of the nozzle throat
+    Real n_s;                                                                       //Secondary nozzle efficiency
+    Real phi_p;                                                                     //Viscous loss between primary and secondary streams
+    Real phi_m;                                                                     //Loss in the streams mixing
+    Real phi_mb;                                                                    //Loss in the streams mixing when lp_tank.m_flow = 0
+    // SI.MassFlowRate hp_tank.m_flow;                                                          //Mass flow rate primary
+    // SI.MassFlowRate mfr_s;                                                          //Mass flow rate secondary
+    SI.MassFlowRate mfr_s_ref;                                                          //Mass flow rate secondary
+
+    SI.Pressure P_py;                                                               //Pressure of primary flow at section Y
+    SI.Pressure P_sy;                                                               //Pressure of secondary flow at section Y
+    Real M_py;                                                                      //Mach number of primary flow at section Y
+    SI.Area A_py;                                                                   //Area of primary flow at section Y
+    SI.Area A_sy;                                                                   //Area of secondary flow at section Y
+    SI.Area A3;                                                                     //Area of mixing section
+    Real Ucc;                                                                       //Entrainment ratio at critical point
+    SI.Temperature T_py;                                                            //Temperature of primary flow at section Y
+    SI.Temperature T_sy;                                                            //Temperature of secondary flow at section Y
+    SI.Velocity V_py;                                                               //Velocity of primary flow at section Y
+    SI.Velocity V_sy;                                                               //Velocity of secondary flow at section Y
+    SI.Velocity V_m;                                                                //Velocity of mixing section
+    SI.Pressure P_m;                                                                //Pressure of mixing section
+    SI.Temperature T_m;                                                             //Temperature of mixing section
+    Real M_m;                                                                       //Mach number of mixing section
+    SI.Pressure P3;                                                                 //Pressure after shock in mixing section
+    //  parameter SI.Pressure P_out=5e7;                                                                 //Pressure after shock in mixing section
+
+    SI.Temperature T3;                                                              //Temperature after shock in mixing section
+    Real M3;                                                                        //Mach number after shock in mixing section
+    SI.Pressure P_cc;                                                               //Pressure at critical point
+    SI.Temperature T_cc;                                                            //Temperature at critical point
+    Real  M_py_bis;                                                                 //Mach number at section Y if mfr_s = 0
+    SI.Temperature T_py_bis;                                                        //Temperature at section Y if mfr_s = 0
+    SI.Velocity V_py_bis;                                                           //Velocity at section Y if mfr_s = 0
+    SI.Velocity V_m_bis;                                                            //Velocity of mixing section if mfr_s = 0
+    SI.Temperature T_m_bis;                                                         //Temperature of mixing section if mfr_s = 0
+    Real M_m_bis;                                                                   //Mach number of mixing section if mfr_s = 0
+    SI.Pressure P3_bis;                                                             //Pressure after shock in mixing section if mfr_s = 0
+    SI.Temperature T3_bis;                                                          //Temperature after shock in mixing section if mfr_s = 0
+    Real M3_bis;                                                                    //Mach number after shock in mixing section if mfr_s = 0
+    SI.Pressure P_cb;                                                               //Pressure at breakdown point
+    SI.Temperature T_cb;                                                            //Temperature at breakdown point
+    // SI.Mass M_HP; //Mass of hydrogen coming from
+
+    //------------------------------------------------------------------------------
+    //                  Computation of Ejector characteristics                    //
+    //------------------------------------------------------------------------------
+    // Pcc : Critical pressure
+    // Tcc : Critical temperature
+    // Pcb : Breakdown pressure
+    // Pcb : Breakdown temperature
+    // Ucc : Critical entrainment ratio
+    // mfr p : Mass flow rate at primary inlet
+    // mfr s : Mass flow rate at secondary inlet
+    //------------------------------------------------------------------------------
+
+      Ports.PressurePort pp1 annotation (
+          Placement(transformation(extent={{-30,30},{-10,50}}),
+            iconTransformation(extent={{-30,30},{-10,50}})));
+      Ports.PressurePort pp2 annotation (
+          Placement(transformation(extent={{30,30},{50,50}}),
+            iconTransformation(extent={{30,30},{50,50}})));
+    equation
+      if z1==0 then
+        x=x1;
+        Rt=Rt1;
+        AR=AR1;
+        n_p=n_p1;
+      elseif z1==1 then
+        x=x2;
+        Rt=Rt2;
+        AR=AR2;
+        n_p=n_p2;
+      elseif z1==2 then
+        x=x3;
+        Rt=Rt3;
+        AR=AR3;
+        n_p=n_p3;
+      else
+        x=x1;
+        Rt=Rt1;
+        AR=AR1;
+        n_p=n_p1;
+        end if;
+
+     state1 = Medium.setState_ph(hp_tank.p, inStream(hp_tank.h_outflow));
+     state2 = Medium.setState_ph(lp_tank.p, inStream(lp_tank.h_outflow));
+     state3=  Medium.setState_ph(P_py, inStream(hp_tank.h_outflow));
+     state4=  Medium.setState_pT(P_py, T_py);
+     state5=  Medium.setState_pT(P_sy, T_sy);
+
+     T_g=Medium.temperature(state1);
+     T_e=Medium.temperature(state2);
+
+      //Geometrical parameters
+      R3 = Rt*sqrt(AR);
+      At = pi*(Rt*10^(-3))^2;
+      PR = lp_tank.p/hp_tank.p;
+
+      //Definition of efficiencies
+      n_s    = x[1,1] + x[2,1]*(1/AR) + x[3,1]*PR + x[4,1]*(1/AR)*PR + x[5,1]*(1/AR)^2 + x[6,1]*PR^2 + x[7,1]*(1/AR)^3 + x[8,1]*PR^3 + x[9,1]*PR*(1/AR)^2 + x[10,1]*(1/AR)*PR^2 + x[11,1]*((1/AR)^2)*(PR^2);
+      phi_p  = x[1,2] + x[2,2]*(1/AR) + x[3,2]*PR + x[4,2]*(1/AR)*PR + x[5,2]*(1/AR)^2 + x[6,2]*PR^2 + x[7,2]*(1/AR)^3 + x[8,2]*PR^3 + x[9,2]*PR*(1/AR)^2 + x[10,2]*(1/AR)*PR^2 + x[11,2]*((1/AR)^2)*(PR^2);
+      phi_m  = x[1,3] + x[2,3]*(1/AR) + x[3,3]*PR + x[4,3]*(1/AR)*PR + x[5,3]*(1/AR)^2 + x[6,3]*PR^2 + x[7,3]*(1/AR)^3 + x[8,3]*PR^3 + x[9,3]*PR*(1/AR)^2 + x[10,3]*(1/AR)*PR^2 + x[11,3]*((1/AR)^2)*(PR^2);
+      phi_mb = x[1,4] + x[2,4]*(1/AR) + x[3,4]*PR + x[4,4]*(1/AR)*PR + x[5,4]*(1/AR)^2 + x[6,4]*PR^2 + x[7,4]*(1/AR)^3 + x[8,4]*PR^3 + x[9,4]*PR*(1/AR)^2 + x[10,4]*(1/AR)*PR^2 + x[11,4]*((1/AR)^2)*(PR^2);
+
+      //Step 1 - Resolve flow at primary nozzle
+      hp_tank.m_flow = ((hp_tank.p*At)/sqrt(T_g))*sqrt(((Medium.specificHeatCapacityCp(state1)/Medium.specificHeatCapacityCv(state1))/(8.3144598/Medium.molarMass(state1)))*(2/((Medium.specificHeatCapacityCp(state1)/Medium.specificHeatCapacityCv(state1))+1))^(((Medium.specificHeatCapacityCp(state1)/Medium.specificHeatCapacityCv(state1))+1)/((Medium.specificHeatCapacityCp(state1)/Medium.specificHeatCapacityCv(state1))-1)))*sqrt(n_p);
+    //   hp_tank.m_flow = 0.060;
+      P_sy = lp_tank.p/((1+(((Medium.specificHeatCapacityCp(state2)/Medium.specificHeatCapacityCv(state2))-1)/2)*(M_sy^2))^((Medium.specificHeatCapacityCp(state2)/Medium.specificHeatCapacityCv(state2))/((Medium.specificHeatCapacityCp(state2)/Medium.specificHeatCapacityCv(state2))-1)));
+
+      //Step 2 - Resolve flow at secondary nozzle
+      P_py = P_sy;
+      M_py = sqrt((2/((Medium.specificHeatCapacityCp(state3)/Medium.specificHeatCapacityCv(state3))-1))*(((hp_tank.p/P_py)^(((Medium.specificHeatCapacityCp(state3)/Medium.specificHeatCapacityCv(state3))-1)/(Medium.specificHeatCapacityCp(state3)/Medium.specificHeatCapacityCv(state3))))-1));
+      A_py = At*(phi_p/M_py)*((1+(((Medium.specificHeatCapacityCp(state3)/Medium.specificHeatCapacityCv(state3))-1)/2)*(M_py^2))/(1+(((Medium.specificHeatCapacityCp(state3)/Medium.specificHeatCapacityCv(state3))-1)/2)))^(((Medium.specificHeatCapacityCp(state3)/Medium.specificHeatCapacityCv(state3))+1)/(2*((Medium.specificHeatCapacityCp(state3)/Medium.specificHeatCapacityCv(state3))-1)));
+      A3 = pi*(R3*10^(-3))^2;
+      A_sy = A3-A_py;
+      mfr_s_ref = ((lp_tank.p*A_sy)/sqrt(T_e))*sqrt(((Medium.specificHeatCapacityCp(state2)/Medium.specificHeatCapacityCv(state2))/(8.3144598/Medium.molarMass(state2)))*(2/((Medium.specificHeatCapacityCp(state2)/Medium.specificHeatCapacityCv(state2))+1))^(((Medium.specificHeatCapacityCp(state2)/Medium.specificHeatCapacityCv(state2))+1)/((Medium.specificHeatCapacityCp(state2)/Medium.specificHeatCapacityCv(state2))-1)))*sqrt(n_s);
+
+      //ER critical point
+      Ucc = mfr_s_ref/hp_tank.m_flow;
+
+      //Step 3 - Resolve flow at Y section
+      T_py = T_g/(1+(((Medium.specificHeatCapacityCp(state1)/Medium.specificHeatCapacityCv(state1))-1)/2)*(M_py^2));
+      T_sy = T_e/(1+(((Medium.specificHeatCapacityCp(state2)/Medium.specificHeatCapacityCv(state2))-1)/2)*(M_sy^2));
+      V_py = M_py*sqrt((Medium.specificHeatCapacityCp(state4)/Medium.specificHeatCapacityCv(state4))*(8.3144598/Medium.molarMass(state4))*T_py);
+      V_sy = M_sy*sqrt((Medium.specificHeatCapacityCp(state5)/Medium.specificHeatCapacityCv(state5))*(8.3144598/Medium.molarMass(state5))*T_sy);
+
+      //Step 4 - Resolve flow at mixing section
+      V_m = phi_m*(hp_tank.m_flow*V_py+mfr_s_ref*V_sy)/(hp_tank.m_flow+mfr_s_ref);
+      P_m = P_sy;
+      T_m = (((hp_tank.m_flow*(Medium.specificHeatCapacityCp(Medium.setState_pT(hp_tank.p,(T_py+T_sy)/2))*T_py+((V_py^2)/2))+mfr_s_ref*(Medium.specificHeatCapacityCp(Medium.setState_pT(hp_tank.p,(T_py+T_sy)/2))*T_sy+((V_sy^2)/2)))/(hp_tank.m_flow+mfr_s_ref))-((V_m^2)/2))/Medium.specificHeatCapacityCp(Medium.setState_pT(hp_tank.p,(T_py+T_sy)/2));
+      M_m = V_m/sqrt((Medium.specificHeatCapacityCp(Medium.setState_pT(P_m,T_m))/Medium.specificHeatCapacityCv(Medium.setState_pT(P_m,T_m)))*(8.3144598/Medium.molarMass(Medium.setState_pT(P_m,T_m)))*T_m);
+
+      //Step 5 - Resolve flow at mixing section after shock
+      if M_m >= 1 then //In case of a shock
+        P3 = P_m*(1+((2*(Medium.specificHeatCapacityCp(Medium.setState_pT(P_m,T_m))/Medium.specificHeatCapacityCv(Medium.setState_pT(P_m,T_m))))/((Medium.specificHeatCapacityCp(Medium.setState_pT(P_m,T_m))/Medium.specificHeatCapacityCv(Medium.setState_pT(P_m,T_m)))+1))*((M_m^2)-1));
+        M3 = sqrt((1+(((Medium.specificHeatCapacityCp(Medium.setState_pT(P_m,T_m))/Medium.specificHeatCapacityCv(Medium.setState_pT(P_m,T_m)))-1)/2)*(M_m^2))/((Medium.specificHeatCapacityCp(Medium.setState_pT(P_m,T_m))/Medium.specificHeatCapacityCv(Medium.setState_pT(P_m,T_m)))*(M_m^2)-(((Medium.specificHeatCapacityCp(Medium.setState_pT(P_m,T_m))/Medium.specificHeatCapacityCv(Medium.setState_pT(P_m,T_m)))-1)/2)));
+        T3 = T_m*((2*(Medium.specificHeatCapacityCp(Medium.setState_pT(P_m,T_m))/Medium.specificHeatCapacityCv(Medium.setState_pT(P_m,T_m)))*(M_m^2)-((Medium.specificHeatCapacityCp(Medium.setState_pT(P_m,T_m))/Medium.specificHeatCapacityCv(Medium.setState_pT(P_m,T_m)))-1))*(((Medium.specificHeatCapacityCp(Medium.setState_pT(P_m,T_m))/Medium.specificHeatCapacityCv(Medium.setState_pT(P_m,T_m)))-1)*(M_m^2)+2))/((M_m^2)*((Medium.specificHeatCapacityCp(Medium.setState_pT(P_m,T_m))/Medium.specificHeatCapacityCv(Medium.setState_pT(P_m,T_m)))+1)^2);
+      else //In case of no shock
+        P3 = P_m;
+        M3 = M_m;
+        T3 = T_m;
+      end if;
+
+      //Step 6 - Resolve flow at ejector outlet
+      P_cc = P3*(1+(((Medium.specificHeatCapacityCp(Medium.setState_pT(P3,T3))/Medium.specificHeatCapacityCv(Medium.setState_pT(P3,T3)))-1)/2)*(M3^2))^((Medium.specificHeatCapacityCp(Medium.setState_pT(P3,T3))/Medium.specificHeatCapacityCv(Medium.setState_pT(P3,T3)))/((Medium.specificHeatCapacityCp(Medium.setState_pT(P3,T3))/Medium.specificHeatCapacityCv(Medium.setState_pT(P3,T3)))-1));
+      T_cc = T3*(1+(((Medium.specificHeatCapacityCp(Medium.setState_pT(P3,T3))/Medium.specificHeatCapacityCv(Medium.setState_pT(P3,T3)))-1)/2)*(M3^2));
+
+      //Step 7 - Resolve flow at section Y in case mfr_s_ref = 0
+      M_py_bis = sqrt((2/((Medium.specificHeatCapacityCp(state1)/Medium.specificHeatCapacityCv(state1))-1))*((hp_tank.p/lp_tank.p)^(((Medium.specificHeatCapacityCp(state1)/Medium.specificHeatCapacityCv(state1))-1)/(Medium.specificHeatCapacityCp(state1)/Medium.specificHeatCapacityCv(state1)))-1));
+      T_py_bis = T_g/(1+(M_py_bis^2)*((Medium.specificHeatCapacityCp(state1)/Medium.specificHeatCapacityCv(state1))-1)/2);
+      V_py_bis = M_py_bis*sqrt((Medium.specificHeatCapacityCp(Medium.setState_pT(lp_tank.p,T_py_bis))/Medium.specificHeatCapacityCv(Medium.setState_pT(lp_tank.p,T_py_bis)))*(8.3144598/Medium.molarMass(state5))*T_py_bis);
+
+      //Step 8 - Resolve flow at mixing section in case mfr_s_ref = 0
+      V_m_bis = phi_mb*V_py_bis;
+      T_m_bis = (Medium.specificHeatCapacityCp(Medium.setState_pT(lp_tank.p,T_py_bis))*T_py_bis+((V_py_bis^2)/2)-((V_m_bis^2)/2))/Medium.specificHeatCapacityCp(Medium.setState_pT(lp_tank.p,T_py_bis));
+      M_m_bis = V_m_bis/sqrt((Medium.specificHeatCapacityCp(Medium.setState_pT(lp_tank.p,T_m_bis))/Medium.specificHeatCapacityCv(Medium.setState_pT(lp_tank.p,T_m_bis)))*(8.3144598/Medium.molarMass(Medium.setState_pT(lp_tank.p,T_m_bis)))*T_m_bis);
+
+      //Step 9 - Resolve flow at mixing section after shock in case mfr_s_ref = 0
+      if M_m_bis >= 1 then //In case of a shock
+        P3_bis = lp_tank.p*(1+((2*(Medium.specificHeatCapacityCp(Medium.setState_pT(lp_tank.p,T_m_bis))/Medium.specificHeatCapacityCv(Medium.setState_pT(lp_tank.p,T_m_bis))))/((Medium.specificHeatCapacityCp(Medium.setState_pT(lp_tank.p,T_m_bis))/Medium.specificHeatCapacityCv(Medium.setState_pT(lp_tank.p,T_m_bis)))+1))*((M_m_bis^2)-1));
+        M3_bis = sqrt((1+(((Medium.specificHeatCapacityCp(Medium.setState_pT(lp_tank.p,T_m_bis))/Medium.specificHeatCapacityCv(Medium.setState_pT(lp_tank.p,T_m_bis)))-1)/2)*(M_m_bis^2))/((Medium.specificHeatCapacityCp(Medium.setState_pT(lp_tank.p,T_m_bis))/Medium.specificHeatCapacityCv(Medium.setState_pT(lp_tank.p,T_m_bis)))*(M_m_bis^2)-(((Medium.specificHeatCapacityCp(Medium.setState_pT(lp_tank.p,T_m_bis))/Medium.specificHeatCapacityCv(Medium.setState_pT(lp_tank.p,T_m_bis)))-1)/2)));
+        T3_bis = T_m_bis*((2*(Medium.specificHeatCapacityCp(Medium.setState_pT(lp_tank.p,T_m_bis))/Medium.specificHeatCapacityCv(Medium.setState_pT(lp_tank.p,T_m_bis)))*(M_m_bis^2)-((Medium.specificHeatCapacityCp(Medium.setState_pT(lp_tank.p,T_m_bis))/Medium.specificHeatCapacityCv(Medium.setState_pT(lp_tank.p,T_m_bis)))-1))*(((Medium.specificHeatCapacityCp(Medium.setState_pT(lp_tank.p,T_m_bis))/Medium.specificHeatCapacityCv(Medium.setState_pT(lp_tank.p,T_m_bis)))-1)*(M_m_bis^2)+2))/((M_m_bis^2)*((Medium.specificHeatCapacityCp(Medium.setState_pT(lp_tank.p,T_m_bis))/Medium.specificHeatCapacityCv(Medium.setState_pT(lp_tank.p,T_m_bis)))+1)^2);
+      else //In case of no shock
+        P3_bis = lp_tank.p;
+        M3_bis = M_m_bis;
+        T3_bis = T_m_bis;
+      end if;
+
+      //Step 10 - Resolve flow at ejector outlet if mfr_s_ref = 0
+      P_cb = P3_bis*(1+(((Medium.specificHeatCapacityCp(Medium.setState_pT(P3_bis,T3_bis))/Medium.specificHeatCapacityCv(Medium.setState_pT(P3_bis,T3_bis)))-1)/2)*(M3_bis^2))^((Medium.specificHeatCapacityCp(Medium.setState_pT(P3_bis,T3_bis))/Medium.specificHeatCapacityCv(Medium.setState_pT(P3_bis,T3_bis)))/((Medium.specificHeatCapacityCp(Medium.setState_pT(P3_bis,T3_bis))/Medium.specificHeatCapacityCv(Medium.setState_pT(P3_bis,T3_bis)))-1));
+      T_cb = T3_bis*(1+(((Medium.specificHeatCapacityCp(Medium.setState_pT(P3_bis,T3_bis))/Medium.specificHeatCapacityCv(Medium.setState_pT(P3_bis,T3_bis)))-1)/2)*(M3_bis^2));
+
+    //    if car_tank.p < P_cc and z1 > 0 then
+    //      lp_tank.m_flow = Ucc*hp_tank.m_flow;
+    //      ejects=true;
+    //    elseif car_tank.p < P_cb and car_tank.p >= P_cc and z1 > 0 then
+    //      lp_tank.m_flow = Ucc*((P_cb-car_tank.p)/(P_cb-P_cc))*hp_tank.m_flow;
+    //      ejects=true;
+    //    else
+    //      lp_tank.m_flow = 0;
+    //      ejects=false;
+    //    end if;
+
+    lp_tank.m_flow = 0;
+    ejects=false;
+
+    hp_tank.m_flow+lp_tank.m_flow+car_tank.m_flow=0;
+    hp_tank.m_flow*inStream(hp_tank.h_outflow)+lp_tank.m_flow*inStream(lp_tank.h_outflow)+car_tank.m_flow*car_tank.h_outflow=0;
+
+    hp_tank.h_outflow=inStream(car_tank.h_outflow);
+    lp_tank.h_outflow=inStream(car_tank.h_outflow);
+
+    //    hp_tank.p=P_py;
+    //    lp_tank.p=P_sy;
+    //    car_tank.p=P3;
+
+    pp1.p=lp_tank.p;
+    pp2.p=car_tank.p;
+
+    //------------------------------------------------------------------------------
+
+        annotation (Icon(coordinateSystem(preserveAspectRatio=false), graphics={
+              Rectangle(extent={{-60,40},{60,-40}}, lineColor={28,108,200})}),
+              Diagram(coordinateSystem(preserveAspectRatio=false)));
+    end Ejector_one_inlet;
   end Ejectors;
 
   package Compressor
@@ -5018,7 +5804,7 @@ For a tube with a given roughness
       end if;
 
       if TemperatureClass=="T40" then
-      assert(273.15-40<T_hex_con, "Cooling temperature in heat exchanger is to low for Temperature Class set");
+      assert(273.15-50<T_hex_con, "Cooling temperature in heat exchanger is to low for Temperature Class set");
       elseif TemperatureClass=="T30" then
       assert(273.15-33<T_hex_con, "Cooling temperature in heat exchanger is to low for Temperature Class set");
       elseif TemperatureClass=="T20" then
@@ -5032,6 +5818,93 @@ For a tube with a given roughness
                          fileName="Graphics/HEX.png")}),
           Diagram(coordinateSystem(extent={{-100,-80},{100,40}})));
     end HeatExchangerWithRampDown;
+
+    model HeatExchangerFixedTemperatureSimple
+      "Simple heat exchanger setting the outlet temperature"
+
+     import SI = Modelica.SIunits
+        "Renemaing the path to the SI units in modelica library";
+
+    /******************** thermodynamic properties *****************************/
+    replaceable package Medium = ExternalMedia.Media.CoolPropMedium (onePhase=true)
+       constrainedby Modelica.Media.Interfaces.PartialMedium
+                                                   annotation (choicesAllMatching=true);
+
+           Medium.ThermodynamicState mediumB;
+           Medium.ThermodynamicState mediumA;
+
+    /******************** Connectors *****************************/
+
+      Ports.FlowPort portA
+        annotation (Placement(transformation(extent={{-90,-10},{-70,10}})));
+      Ports.FlowPort portB
+        annotation (Placement(transformation(extent={{70,-10},{90,10}})));
+
+    /******************** parameters *****************************/
+    //  Boolean SAEJ2601=true "Use SAE's outlet temperature" annotation (Dialog(group="Design parameters")); X
+     //  outer SI.Temperature   T_cool; X
+     parameter SI.Temperature T_hex = 273.15
+        "Temperature out of the heat exchanger"   annotation(Dialog(group="Design parameters",  enable = SAEJ2601 == false));
+     parameter Real COP "Coefficient of performance";
+     //  SI.Temperature THEX = (if SAEJ2601 == true then T_cool else T_hex); X
+    outer parameter SI.Temperature T_amb;
+
+    /******************** Variables *****************************/
+    SI.Heat Q "Heat transfer";
+    SI.Pressure dp "Change in pressure";
+    SI.SpecificEnthalpy dh "Change in enthalpy";
+    SI.Power W;
+    //Exergy
+    outer SI.SpecificEntropy s_0;
+    outer SI.SpecificEnthalpy h_0;
+    SI.Power EA;
+    SI.Power EB;
+
+    SI.Power E_D;
+    SI.Power EQ;
+    SI.Power EQ1;
+    Real dummy;
+    /******************** Equations *****************************/
+    equation
+
+      dp=0 "Pressure loss";
+    inStream(portB.h_outflow)=portA.h_outflow+dh "Enthalpy definition";
+    inStream(portA.h_outflow)=portB.h_outflow+dh "Enthalpy definition";
+
+    if portB.m_flow > 0 then
+        mediumB = Medium.setState_pT(portB.p, T_hex);
+      mediumA= Medium.setState_ph(portA.p, inStream(portA.h_outflow));
+      actualStream(portA.h_outflow)*portA.m_flow + actualStream(portB.h_outflow)*portB.m_flow
+      +der(Q) =0.0 "Energy balance";
+      dh=Medium.specificEnthalpy(mediumA)-Medium.specificEnthalpy(mediumB)
+          "Change in enthalpy";
+    E_D=EA+EQ-EB;
+    dummy=1;
+    else
+        mediumA = Medium.setState_pT(portA.p, T_hex);
+      mediumB= Medium.setState_ph(portB.p, inStream(portB.h_outflow));
+      actualStream(portA.h_outflow)*portA.m_flow + actualStream(portB.h_outflow)*portB.m_flow
+      +der(Q) =0.0 "Energy balance";
+      dh=Medium.specificEnthalpy(mediumB)-Medium.specificEnthalpy(mediumA)
+          "Change in enthalpy";
+         // E_D=EA+EQ-EB;
+     E_D=EB+EQ-EA;
+    dummy=2;
+    end if;
+    W=-Q/COP;
+      portA.m_flow+portB.m_flow=0 "Mass balance";
+      dp=portB.p-portA.p "momentum balance";
+
+    //Exergy
+    der(EA)= abs(portA.m_flow)*(mediumA.h-h_0-T_amb*(mediumA.s-s_0));
+    der(EB)= abs(portA.m_flow)*(mediumB.h-h_0-T_amb*(mediumB.s-s_0));
+    der(EQ1)=der(Q)*(1-T_hex/T_amb);
+    der(EQ)= abs(der(EQ1));
+      annotation (Icon(coordinateSystem(preserveAspectRatio=false, extent={{-100,
+                -80},{100,40}}),        graphics={Bitmap(extent={{-84,24},{86,-62}},
+                         fileName="Graphics/HEX.png")}),
+          Diagram(coordinateSystem(extent={{-100,-80},{100,40}})));
+    end HeatExchangerFixedTemperatureSimple;
   end HeatExchangers;
 
   package Mixers
@@ -9334,9 +10207,14 @@ to/from closed ports";
 reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"));
     //parameter SI.Pressure Switch_pressure2( start=10e5);
 
-     parameter SI.Pressure Tank1= 45e6 "Tank1" annotation(Dialog(group="Compressor switching pressure"));
-     parameter SI.Pressure Tank2 = 65e6 "Tank2" annotation(Dialog(group="Compressor switching pressure"));
-     parameter SI.Pressure Tank3 = 95e6 "Tank3" annotation(Dialog(group="Compressor switching pressure"));
+    SI.Pressure Tank1 "Tank1" annotation(Dialog(group="Compressor switching pressure"));
+    SI.Pressure Tank2 "Tank2" annotation(Dialog(group="Compressor switching pressure"));
+    SI.Pressure Tank3 "Tank3" annotation(Dialog(group="Compressor switching pressure"));
+
+
+    //  parameter SI.Pressure Tank1= 45e6 "Tank1" annotation(Dialog(group="Compressor switching pressure"));
+    //  parameter SI.Pressure Tank2 = 65e6 "Tank2" annotation(Dialog(group="Compressor switching pressure"));
+    //  parameter SI.Pressure Tank3 = 95e6 "Tank3" annotation(Dialog(group="Compressor switching pressure"));
      parameter SI.Pressure Tank4 = 95e6 "Tank4" annotation(Dialog(group="Compressor switching pressure"));
      parameter SI.Pressure Tank5 = 95e6 "Tank5" annotation(Dialog(group="Compressor switching pressure"));
      parameter SI.Pressure Tank6 = 95e6 "Tank6" annotation(Dialog(group="Compressor switching pressure"));
@@ -10058,6 +10936,279 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
               fillPattern=FillPattern.Solid)}), Diagram(coordinateSystem(
               preserveAspectRatio=false)));
     end Multiple_Ejector_Pressure_Control;
+
+    model ControlMultiplebanks_3tanks
+
+      import SI = Modelica.SIunits;
+
+    /******************** Connectors *****************************/
+
+     Ports.PressurePort pp1 annotation (Placement(
+            transformation(extent={{-30,-110},{-10,-90}}), iconTransformation(
+              extent={{-30,-108},{-10,-88}})));
+     Ports.PressurePort pp2 annotation (Placement(
+            transformation(extent={{10,-108},{30,-88}}), iconTransformation(extent={
+                {10,-108},{30,-88}})));
+     Ports.PressurePort pp3 annotation (Placement(
+            transformation(extent={{88,-10},{108,10}}), iconTransformation(extent={{
+                88,-10},{108,10}})));
+     Ports.PressurePort pp5 annotation (Placement(
+            transformation(extent={{-110,-46},{-90,-26}}), iconTransformation(
+              extent={{-110,-84},{-90,-64}})));
+     Ports.PressurePort pp6 annotation (Placement(
+            transformation(extent={{-110,-18},{-90,2}}), iconTransformation(extent={
+                {-110,-64},{-90,-44}})));
+
+     Ports.PressurePort pp7 annotation (Placement(
+            transformation(extent={{-110,14},{-90,34}}), iconTransformation(extent={
+                {-110,-44},{-90,-24}})));
+     Ports.PressurePort pp8 annotation (Placement(
+            transformation(extent={{-110,44},{-90,64}}), iconTransformation(extent={
+                {-110,-24},{-90,-4}})));
+     Ports.PressurePort pp9 annotation (Placement(
+            transformation(extent={{-110,12},{-90,32}}), iconTransformation(extent={
+                {-110,-2},{-90,18}})));
+     Ports.PressurePort pp10 annotation (Placement(
+            transformation(extent={{-110,44},{-90,64}}), iconTransformation(extent={
+                {-110,24},{-90,44}})));
+     Ports.PressurePort pp11 annotation (Placement(
+            transformation(extent={{-110,44},{-90,64}}), iconTransformation(extent={
+                {-110,44},{-90,64}})));
+     Ports.PressurePort pp12 annotation (Placement(
+            transformation(extent={{-110,44},{-90,64}}), iconTransformation(extent={
+                {-110,64},{-90,84}})));
+     Ports.PressurePort pp13 annotation (Placement(
+            transformation(extent={{-110,44},{-90,64}}), iconTransformation(extent={
+                {-110,86},{-90,106}})));
+
+    /****************** General parameters *******************/
+    outer SI.Pressure  P_end;
+    parameter SI.Pressure Switch_pressure=10e5 "Pressure across 
+reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"));
+    //parameter SI.Pressure Switch_pressure2( start=10e5);
+
+     parameter SI.Pressure Tank1= 45e6 "Tank1" annotation(Dialog(group="Compressor switching pressure"));
+     parameter SI.Pressure Tank2 = 65e6 "Tank2" annotation(Dialog(group="Compressor switching pressure"));
+     parameter SI.Pressure Tank3 = 95e6 "Tank3" annotation(Dialog(group="Compressor switching pressure"));
+     parameter SI.Pressure Tank4 = 95e6 "Tank4" annotation(Dialog(group="Compressor switching pressure"));
+     parameter SI.Pressure Tank5 = 95e6 "Tank5" annotation(Dialog(group="Compressor switching pressure"));
+     parameter SI.Pressure Tank6 = 95e6 "Tank6" annotation(Dialog(group="Compressor switching pressure"));
+     parameter SI.Pressure Tank7 = 95e6 "Tank7" annotation(Dialog(group="Compressor switching pressure"));
+     parameter SI.Pressure Tank8 = 95e6 "Tank8" annotation(Dialog(group="Compressor switching pressure"));
+     parameter SI.Pressure Tank9 = 95e6 "Tank9" annotation(Dialog(group="Compressor switching pressure"));
+     parameter SI.Pressure Tank10 = 95e6 "Tank10" annotation(Dialog(group="Compressor switching pressure"));
+
+    /****************** variables *******************/
+    Integer z1(start=0);
+    Integer z2(start=0);
+    Integer z3(start=0);
+    Integer z4=0;
+
+    /****************** equations *******************/
+    algorithm
+    // controlling tank shifts (up to 5 tanks)
+      when pp1.p-pp2.p <= Switch_pressure and z1==0 then
+      z1 :=1;
+      elsewhen pp1.p-pp2.p <= Switch_pressure and z1==1 then
+      z1 :=2;
+      elsewhen pp1.p-pp2.p <= Switch_pressure and z1==2 then
+      z1 :=3;
+      elsewhen pp1.p-pp2.p <= Switch_pressure and z1==3 then
+      z1 :=4;
+      elsewhen pp1.p-pp2.p <= Switch_pressure and z1==4 then
+      z1 :=5;
+      elsewhen pp1.p-pp2.p <= Switch_pressure and z1==5 then
+      z1 :=6;
+      elsewhen pp1.p-pp2.p <= Switch_pressure and z1==6 then
+      z1 :=7;
+      elsewhen pp1.p-pp2.p <= Switch_pressure and z1==7 then
+      z1 :=8;
+      elsewhen pp1.p-pp2.p <= Switch_pressure and z1==8 then
+      z1 :=9;
+      elsewhen pp1.p-pp2.p <= Switch_pressure and z1==9 then
+      z1 :=10;
+      end when;
+
+    //Controlling which tank to be fuelled by the compressor
+    //   when  z2==0 and pp4.p>=Tank1 then
+    //      z2:=1;
+      when  z2==1 and pp5.p>=Tank2 then
+         z2:=2;
+      elsewhen z2==2 and pp6.p>=Tank3 then
+         z2:=3;
+      elsewhen z2==3 and pp7.p>=Tank4 then
+         z2:=4;
+      elsewhen z2==4 and pp8.p>=Tank5 then
+         z2:=5;
+      elsewhen z2==5 and pp9.p>=Tank6 then
+         z2:=6;
+      elsewhen z2==6 and pp10.p>=Tank7 then
+         z2:=7;
+      elsewhen z2==7 and pp11.p>=Tank8 then
+         z2:=8;
+      elsewhen z2==8 and pp12.p>=Tank9 then
+         z2:=9;
+      elsewhen z2==9 and pp13.p>=Tank10 then
+         z2:=10;
+      end when;
+
+    //Signal when fueling has finished
+      when pp3.p<P_end then
+      z3:=0;
+      elsewhen pp3.p>=P_end then
+      z3:=1;
+      end when;
+
+      annotation (preferedView="text", Diagram(coordinateSystem(preserveAspectRatio=false, extent={{-100,
+                -100},{100,100}}),
+                          graphics), Icon(coordinateSystem(preserveAspectRatio=false,
+              extent={{-100,-100},{100,100}}),
+                                          graphics={Ellipse(
+              extent={{80,60},{-80,-80}},
+              lineColor={0,0,255},
+              fillColor={255,255,0},
+              fillPattern=FillPattern.Solid), Text(
+              extent={{-64,10},{68,-12}},
+              lineColor={0,0,255},
+              fillColor={255,255,0},
+              fillPattern=FillPattern.Solid,
+              textString="Control")}));
+    end ControlMultiplebanks_3tanks;
+
+    model ControlMultiplebanks_2tanks
+
+      import SI = Modelica.SIunits;
+
+    /******************** Connectors *****************************/
+
+     Ports.PressurePort pp1 annotation (Placement(
+            transformation(extent={{-30,-110},{-10,-90}}), iconTransformation(
+              extent={{-30,-108},{-10,-88}})));
+     Ports.PressurePort pp2 annotation (Placement(
+            transformation(extent={{10,-108},{30,-88}}), iconTransformation(extent={
+                {10,-108},{30,-88}})));
+     Ports.PressurePort pp3 annotation (Placement(
+            transformation(extent={{88,-10},{108,10}}), iconTransformation(extent={{
+                88,-10},{108,10}})));
+     Ports.PressurePort pp6 annotation (Placement(
+            transformation(extent={{-110,-18},{-90,2}}), iconTransformation(extent={
+                {-110,-64},{-90,-44}})));
+
+     Ports.PressurePort pp7 annotation (Placement(
+            transformation(extent={{-110,14},{-90,34}}), iconTransformation(extent={
+                {-110,-44},{-90,-24}})));
+     Ports.PressurePort pp8 annotation (Placement(
+            transformation(extent={{-110,44},{-90,64}}), iconTransformation(extent={
+                {-110,-24},{-90,-4}})));
+     Ports.PressurePort pp9 annotation (Placement(
+            transformation(extent={{-110,12},{-90,32}}), iconTransformation(extent={
+                {-110,-2},{-90,18}})));
+     Ports.PressurePort pp10 annotation (Placement(
+            transformation(extent={{-110,44},{-90,64}}), iconTransformation(extent={
+                {-110,24},{-90,44}})));
+     Ports.PressurePort pp11 annotation (Placement(
+            transformation(extent={{-110,44},{-90,64}}), iconTransformation(extent={
+                {-110,44},{-90,64}})));
+     Ports.PressurePort pp12 annotation (Placement(
+            transformation(extent={{-110,44},{-90,64}}), iconTransformation(extent={
+                {-110,64},{-90,84}})));
+     Ports.PressurePort pp13 annotation (Placement(
+            transformation(extent={{-110,44},{-90,64}}), iconTransformation(extent={
+                {-110,86},{-90,106}})));
+
+    /****************** General parameters *******************/
+    outer SI.Pressure  P_end;
+    parameter SI.Pressure Switch_pressure=10e5 "Pressure across 
+reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"));
+    //parameter SI.Pressure Switch_pressure2( start=10e5);
+
+     parameter SI.Pressure Tank1= 45e6 "Tank1" annotation(Dialog(group="Compressor switching pressure"));
+     parameter SI.Pressure Tank2 = 65e6 "Tank2" annotation(Dialog(group="Compressor switching pressure"));
+     parameter SI.Pressure Tank3 = 95e6 "Tank3" annotation(Dialog(group="Compressor switching pressure"));
+     parameter SI.Pressure Tank4 = 95e6 "Tank4" annotation(Dialog(group="Compressor switching pressure"));
+     parameter SI.Pressure Tank5 = 95e6 "Tank5" annotation(Dialog(group="Compressor switching pressure"));
+     parameter SI.Pressure Tank6 = 95e6 "Tank6" annotation(Dialog(group="Compressor switching pressure"));
+     parameter SI.Pressure Tank7 = 95e6 "Tank7" annotation(Dialog(group="Compressor switching pressure"));
+     parameter SI.Pressure Tank8 = 95e6 "Tank8" annotation(Dialog(group="Compressor switching pressure"));
+     parameter SI.Pressure Tank9 = 95e6 "Tank9" annotation(Dialog(group="Compressor switching pressure"));
+     parameter SI.Pressure Tank10 = 95e6 "Tank10" annotation(Dialog(group="Compressor switching pressure"));
+
+    /****************** variables *******************/
+    Integer z1(start=0);
+    Integer z2(start=0);
+    Integer z3(start=0);
+    Integer z4=0;
+
+    /****************** equations *******************/
+    algorithm
+    // controlling tank shifts (up to 5 tanks)
+      when pp1.p-pp2.p <= Switch_pressure and z1==0 then
+      z1 :=1;
+      elsewhen pp1.p-pp2.p <= Switch_pressure and z1==1 then
+      z1 :=2;
+      elsewhen pp1.p-pp2.p <= Switch_pressure and z1==2 then
+      z1 :=3;
+      elsewhen pp1.p-pp2.p <= Switch_pressure and z1==3 then
+      z1 :=4;
+      elsewhen pp1.p-pp2.p <= Switch_pressure and z1==4 then
+      z1 :=5;
+      elsewhen pp1.p-pp2.p <= Switch_pressure and z1==5 then
+      z1 :=6;
+      elsewhen pp1.p-pp2.p <= Switch_pressure and z1==6 then
+      z1 :=7;
+      elsewhen pp1.p-pp2.p <= Switch_pressure and z1==7 then
+      z1 :=8;
+      elsewhen pp1.p-pp2.p <= Switch_pressure and z1==8 then
+      z1 :=9;
+      elsewhen pp1.p-pp2.p <= Switch_pressure and z1==9 then
+      z1 :=10;
+      end when;
+
+    //Controlling which tank to be fuelled by the compressor
+    //   when  z2==0 and pp4.p>=Tank1 then
+    //      z2:=1;
+    //   when  z2==1 and pp5.p>=Tank2 then
+    //      z2:=2;
+      when z2==2 and pp6.p>=Tank3 then
+         z2:=3;
+      elsewhen z2==3 and pp7.p>=Tank4 then
+         z2:=4;
+      elsewhen z2==4 and pp8.p>=Tank5 then
+         z2:=5;
+      elsewhen z2==5 and pp9.p>=Tank6 then
+         z2:=6;
+      elsewhen z2==6 and pp10.p>=Tank7 then
+         z2:=7;
+      elsewhen z2==7 and pp11.p>=Tank8 then
+         z2:=8;
+      elsewhen z2==8 and pp12.p>=Tank9 then
+         z2:=9;
+      elsewhen z2==9 and pp13.p>=Tank10 then
+         z2:=10;
+      end when;
+
+    //Signal when fueling has finished
+      when pp3.p<P_end then
+      z3:=0;
+      elsewhen pp3.p>=P_end then
+      z3:=1;
+      end when;
+
+      annotation (preferedView="text", Diagram(coordinateSystem(preserveAspectRatio=false, extent={{-100,
+                -100},{100,100}}),
+                          graphics), Icon(coordinateSystem(preserveAspectRatio=false,
+              extent={{-100,-100},{100,100}}),
+                                          graphics={Ellipse(
+              extent={{80,60},{-80,-80}},
+              lineColor={0,0,255},
+              fillColor={255,255,0},
+              fillPattern=FillPattern.Solid), Text(
+              extent={{-64,10},{68,-12}},
+              lineColor={0,0,255},
+              fillColor={255,255,0},
+              fillPattern=FillPattern.Solid,
+              textString="Control")}));
+    end ControlMultiplebanks_2tanks;
   end Controls;
 
   package Templates
@@ -10181,1945 +11332,26 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
   package AmmoniaCoolProp "Ammonia (R717) CoolProp"
     extends ExternalMedia.Media.CoolPropMedium(mediumName = "R717", substanceNames = {"Ammonia"}, ThermoStates = Modelica.Media.Interfaces.Choices.IndependentVariables.ph);
   end AmmoniaCoolProp;
+
+      package Helium "Helium (He) CoolProp"
+        extends ExternalMedia.Media.CoolPropMedium(
+          mediumName="helium",
+          substanceNames={"helium"},
+          ThermoStates=Modelica.Media.Interfaces.Choices.IndependentVariables.ph);
+      end Helium;
   end Fluids;
 
+  package Units
+
+    type PowerConsumption = Real (
+    final quantity="PowerConsumption",
+    final unit="kWh",
+    min=0);
+
+
+  end Units;
+
   package Models
-
-    package EjectorModels
-      model Ejector_Test
-
-        import SI = Modelica.SIunits;
-        import HydrogenFuellingStationLibrary = HydrogenFuelingStationLibrary;
-
-         replaceable package Medium =
-            HydrogenFuellingStationLibrary.Fluids.Hydrogen
-         constrainedby Modelica.Media.Interfaces.PartialMedium
-                                                     annotation (choicesAllMatching=true);
-
-      SI.InternalEnergy U;
-      SI.Mass M;
-      SI.Enthalpy H;
-
-      Medium.ThermodynamicState medium;
-      inner SI.SpecificEntropy s_0;
-      inner SI.SpecificEnthalpy h_0;
-      inner SI.SpecificInternalEnergy u_0;
-      inner parameter SI.Temperature   T_amb=HRSinfo.T_amb;
-      // inner parameter SI.Pressure P_amb=101e3;
-      inner parameter SI.Temperature T_cool=-40+273;
-      parameter SI.Pressure p_ending=80e6;
-      inner SI.Pressure  P_amb;
-      inner SI.Pressure P_start;
-      inner Real SOC_target;
-      inner SI.Pressure P_end;
-      inner SI.Pressure P_ref;
-      inner Real APRR;
-
-      inner Integer z3=0;
-      inner Integer z5=0;
-
-      Real SOC;
-
-        HydrogenFuellingStationLibrary.HRSInfo HRSinfo
-          annotation (Placement(transformation(extent={{68,72},{88,92}})));
-
-        HydrogenFuellingStationLibrary.Tanks.Tank1 tank1_1(redeclare package
-            Medium = HydrogenFuellingStationLibrary.Fluids.Hydrogen, pInitial=
-              90000000)
-          annotation (Placement(transformation(extent={{-88,-4},{-66,4}})));
-        HydrogenFuellingStationLibrary.Tanks.Tank1 tank1_2(redeclare package
-            Medium = HydrogenFuellingStationLibrary.Fluids.Hydrogen, pInitial=
-              30000000)
-          annotation (Placement(transformation(extent={{-88,-28},{-66,-20}})));
-        HydrogenFuellingStationLibrary.Tanks.Tank1 CHSS(
-          redeclare package Medium =
-              HydrogenFuellingStationLibrary.Fluids.Hydrogen,
-          V=0.15,
-          pInitial=25000000)
-          annotation (Placement(transformation(extent={{70,-18},{48,-10}})));
-
-        HydrogenFuellingStationLibrary.Ejectors.Ejector_Original ejector(
-            redeclare package Medium =
-              HydrogenFuellingStationLibrary.Fluids.Hydrogen)
-          annotation (Placement(transformation(extent={{-4,-24},{16,-4}})));
-      equation
-        medium=Medium.setState_pT(P_amb, T_amb);
-        s_0=Medium.specificEntropy(medium);
-        h_0=Medium.specificEnthalpy(medium);
-        u_0=h_0-P_amb*1/Medium.density(medium);
-         M=tank1_1.M+CHSS.M;
-         U=tank1_1.U+CHSS.U;
-         H=tank1_1.h*tank1_1.M+CHSS.h*CHSS.M;
-
-         SOC=CHSS.medium.d/40.2;
-
-      HRSinfo.P_amb=P_amb;
-      HRSinfo.P_start=P_start;
-      HRSinfo.FP=P_end;
-      HRSinfo.SOC=SOC_target;
-      HRSinfo.APRR=APRR;
-      HRSinfo.P_ref=P_ref;
-
-       if CHSS.p>=p_ending then
-            terminate("Final pressure reached");
-       end if;
-
-        connect(ejector.car_tank, CHSS.portA) annotation (Line(
-            points={{12,-14},{49.7,-14}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(ejector.hp_tank, tank1_1.portA) annotation (Line(
-            points={{0,-10},{-34,-10},{-34,0},{-67.7,0}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(ejector.lp_tank, tank1_2.portA) annotation (Line(
-            points={{0,-18},{-34,-18},{-34,-24},{-67.7,-24}},
-            color={0,0,0},
-            thickness=0.5));
-
-        annotation (Icon(coordinateSystem(preserveAspectRatio=false)), Diagram(
-              coordinateSystem(preserveAspectRatio=false)));
-      end Ejector_Test;
-
-      model Ejector_Cascade
-
-        import SI = Modelica.SIunits;
-        import HydrogenFuellingStationLibrary = HydrogenFuelingStationLibrary;
-
-         replaceable package Medium =
-            HydrogenFuellingStationLibrary.Fluids.Hydrogen
-         constrainedby Modelica.Media.Interfaces.PartialMedium
-                                                     annotation (choicesAllMatching=true);
-
-      SI.InternalEnergy U;
-      SI.Mass M;
-      SI.Enthalpy H;
-
-      Medium.ThermodynamicState medium;
-      inner SI.SpecificEntropy s_0;
-      inner SI.SpecificEnthalpy h_0;
-      inner SI.SpecificInternalEnergy u_0;
-      inner parameter SI.Temperature   T_amb=HRSinfo.T_amb;
-      // inner parameter SI.Pressure P_amb=101e3;
-      inner parameter SI.Temperature T_cool=-40+273;
-      parameter SI.Pressure p_ending=80e6;
-      inner SI.Pressure  P_amb;
-      inner SI.Pressure P_start;
-      inner Real SOC_target;
-      inner SI.Pressure P_end;
-      inner SI.Pressure P_ref;
-      inner Real APRR;
-
-      inner Integer z1=controlMultiplebanks.z1;
-      inner Integer z2=controlMultiplebanks.z2;
-      inner Integer z3=0;
-      inner Integer z4=controlMultiplebanks.z4;
-      inner Integer z5=0;
-
-      Real SOC;
-
-        HydrogenFuellingStationLibrary.HRSInfo HRSinfo
-          annotation (Placement(transformation(extent={{68,72},{88,92}})));
-
-        HydrogenFuellingStationLibrary.Tanks.Tank1 tank1_1(redeclare package
-            Medium = HydrogenFuellingStationLibrary.Fluids.Hydrogen, pInitial=
-              45000000)
-          annotation (Placement(transformation(extent={{-90,16},{-68,24}})));
-        HydrogenFuellingStationLibrary.Tanks.Tank1 tank1_2(redeclare package
-            Medium = HydrogenFuellingStationLibrary.Fluids.Hydrogen, pInitial=
-              30000000)
-          annotation (Placement(transformation(extent={{-90,36},{-68,44}})));
-        HydrogenFuellingStationLibrary.Tanks.Tank1 CHSS(
-          redeclare package Medium =
-              HydrogenFuellingStationLibrary.Fluids.Hydrogen,
-          V=0.15,
-          pInitial=25000000)
-          annotation (Placement(transformation(extent={{70,-18},{48,-10}})));
-
-        HydrogenFuellingStationLibrary.Ejectors.Ejector          ejector(
-            redeclare package Medium =
-              HydrogenFuellingStationLibrary.Fluids.Hydrogen)
-          annotation (Placement(transformation(extent={{-4,-24},{16,-4}})));
-        HydrogenFuellingStationLibrary.Tanks.Tank1 tank1_3(redeclare package
-            Medium =
-              HydrogenFuellingStationLibrary.Fluids.Hydrogen, pInitial=150000000)
-          annotation (Placement(transformation(extent={{-90,-4},{-68,4}})));
-        HydrogenFuellingStationLibrary.Tanks.Tank1 tank1_4(redeclare package
-            Medium =
-              HydrogenFuellingStationLibrary.Fluids.Hydrogen, pInitial=110000000)
-          annotation (Placement(transformation(extent={{-90,-24},{-68,-16}})));
-        HydrogenFuellingStationLibrary.Switches.WithStop.Switch4Flows switch4Flows(
-            control=1, control2=1)
-          annotation (Placement(transformation(extent={{-34,-10},{-22,14}})));
-        HydrogenFuellingStationLibrary.Mixers.VolumeMixer Mixer(      redeclare
-            package Medium = HydrogenFuellingStationLibrary.Fluids.Hydrogen,
-            fixedInitialPressure=false)
-          annotation (Placement(transformation(extent={{-56,32},{-40,42}})));
-        HydrogenFuellingStationLibrary.Controls.ControlMultiplebanks
-          controlMultiplebanks(
-          Switch_pressure=2000000,
-          Tank1=30000000,
-          Tank2=45000000,
-          Tank3=65000000,
-          Tank4=90000000)
-          annotation (Placement(transformation(extent={{24,46},{54,80}})));
-      equation
-        medium=Medium.setState_pT(P_amb, T_amb);
-        s_0=Medium.specificEntropy(medium);
-        h_0=Medium.specificEnthalpy(medium);
-        u_0=h_0-P_amb*1/Medium.density(medium);
-         M=tank1_1.M+CHSS.M;
-         U=tank1_1.U+CHSS.U;
-         H=tank1_1.h*tank1_1.M+CHSS.h*CHSS.M;
-
-         SOC=CHSS.medium.d/40.2;
-
-      HRSinfo.P_amb=P_amb;
-      HRSinfo.P_start=P_start;
-      HRSinfo.FP=P_end;
-      HRSinfo.SOC=SOC_target;
-      HRSinfo.APRR=APRR;
-      HRSinfo.P_ref=P_ref;
-
-       if CHSS.p>=p_ending then
-            terminate("Final pressure reached");
-       end if;
-
-        connect(ejector.car_tank, CHSS.portA) annotation (Line(
-            points={{12,-14},{49.7,-14}},
-            color={0,0,0},
-            thickness=0.5));
-
-        connect(switch4Flows.out1, ejector.hp_tank) annotation (Line(
-            points={{-22,2},{-12,2},{-12,-10},{0,-10}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(Mixer.portA, tank1_2.portA) annotation (Line(
-            points={{-54.9333,37.7143},{-62,37.7143},{-62,40},{-69.7,40}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(Mixer.portC, switch4Flows.in1) annotation (Line(
-            points={{-41.2444,33.4286},{-36,33.4286},{-36,9.2},{-32.6,9.2}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(Mixer.portB, ejector.lp_tank) annotation (Line(
-            points={{-41.2444,37.7143},{-14,37.7143},{-14,-18},{0,-18}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(tank1_1.portA, switch4Flows.in2) annotation (Line(
-            points={{-69.7,20},{-50,20},{-50,4.4},{-32.6,4.4}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(tank1_3.portA, switch4Flows.in3) annotation (Line(
-            points={{-69.7,0},{-52,0},{-52,-0.4},{-32.6,-0.4}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(tank1_4.portA, switch4Flows.in4) annotation (Line(
-            points={{-69.7,-20},{-52,-20},{-52,-5.2},{-32.6,-5.2}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(controlMultiplebanks.pp4, tank1_2.pp) annotation (Line(
-            points={{24,47.36},{-28,47.36},{-28,43.8},{-80,43.8}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(controlMultiplebanks.pp5, tank1_1.pp) annotation (Line(
-            points={{24,50.42},{-92,50.42},{-92,23.8},{-80,23.8}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(controlMultiplebanks.pp6, tank1_3.pp) annotation (Line(
-            points={{24,53.82},{-94,53.82},{-94,3.8},{-80,3.8}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(controlMultiplebanks.pp7, tank1_4.pp) annotation (Line(
-            points={{24,57.22},{-96,57.22},{-96,-16.2},{-80,-16.2}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(controlMultiplebanks.pp3, CHSS.pp) annotation (Line(
-            points={{53.7,63},{53.7,26.5},{60,26.5},{60,-10.2}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(controlMultiplebanks.pp3, controlMultiplebanks.pp8) annotation (Line(
-            points={{53.7,63},{38.85,63},{38.85,60.62},{24,60.62}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(controlMultiplebanks.pp3, controlMultiplebanks.pp9) annotation (Line(
-            points={{53.7,63},{38.85,63},{38.85,64.36},{24,64.36}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(controlMultiplebanks.pp3, controlMultiplebanks.pp10) annotation (Line(
-            points={{53.7,63},{38.85,63},{38.85,68.78},{24,68.78}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(controlMultiplebanks.pp3, controlMultiplebanks.pp11) annotation (Line(
-            points={{53.7,63},{39.85,63},{39.85,72.18},{24,72.18}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(controlMultiplebanks.pp3, controlMultiplebanks.pp12) annotation (Line(
-            points={{53.7,63},{38.85,63},{38.85,75.58},{24,75.58}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(controlMultiplebanks.pp3, controlMultiplebanks.pp13) annotation (Line(
-            points={{53.7,63},{38.85,63},{38.85,79.32},{24,79.32}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(controlMultiplebanks.pp1, ejector.pp1) annotation (Line(
-            points={{36,46.34},{36,-6},{4,-6},{4,-10}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(ejector.pp2, controlMultiplebanks.pp2) annotation (Line(
-            points={{10,-10},{42,-10},{42,46.34}},
-            color={0,0,0},
-            thickness=0.5));
-        annotation (Icon(coordinateSystem(preserveAspectRatio=false)), Diagram(
-              coordinateSystem(preserveAspectRatio=false)));
-      end Ejector_Cascade;
-
-      model Ejector_Cascade_Pressure_Losses
-
-        import SI = Modelica.SIunits;
-        import HydrogenFuellingStationLibrary = HydrogenFuelingStationLibrary;
-
-         replaceable package Medium =
-            HydrogenFuellingStationLibrary.Fluids.Hydrogen
-         constrainedby Modelica.Media.Interfaces.PartialMedium
-                                                     annotation (choicesAllMatching=true);
-
-      SI.InternalEnergy U;
-      SI.Mass M;
-      SI.Enthalpy H;
-
-      Medium.ThermodynamicState medium;
-      inner SI.SpecificEntropy s_0;
-      inner SI.SpecificEnthalpy h_0;
-      inner SI.SpecificInternalEnergy u_0;
-      inner parameter SI.Temperature   T_amb=HRSinfo.T_amb;
-      // inner parameter SI.Pressure P_amb=101e3;
-      inner parameter SI.Temperature T_cool=-40+273;
-      parameter SI.Pressure p_ending=80e6;
-      inner SI.Pressure  P_amb;
-      inner SI.Pressure P_start;
-      inner Real SOC_target;
-      inner SI.Pressure P_end;
-      inner SI.Pressure P_ref;
-      inner Real APRR;
-
-      inner Integer z1=controlMultiplebanks.z1;
-      inner Integer z2=controlMultiplebanks.z2;
-      inner Integer z3=0;
-      inner Integer z4=controlMultiplebanks.z4;
-      inner Integer z5=0;
-
-      Real SOC;
-
-        HydrogenFuellingStationLibrary.HRSInfo HRSinfo
-          annotation (Placement(transformation(extent={{68,72},{88,92}})));
-
-        HydrogenFuellingStationLibrary.Tanks.Tank1 tank1_1(redeclare package
-            Medium = HydrogenFuellingStationLibrary.Fluids.Hydrogen, pInitial=
-              50000000)
-          annotation (Placement(transformation(extent={{-88,14},{-66,22}})));
-        HydrogenFuellingStationLibrary.Tanks.Tank1 tank1_2(redeclare package
-            Medium = HydrogenFuellingStationLibrary.Fluids.Hydrogen, pInitial=
-              30000000)
-          annotation (Placement(transformation(extent={{-88,34},{-66,42}})));
-        HydrogenFuellingStationLibrary.Tanks.Tank1 CHSS(
-          V=0.15,
-          redeclare package Medium =
-              HydrogenFuellingStationLibrary.Fluids.Hydrogen,
-          pInitial=27500000)
-          annotation (Placement(transformation(extent={{92,-20},{70,-12}})));
-
-        HydrogenFuellingStationLibrary.Ejectors.Ejector          ejector(
-            redeclare package Medium =
-              HydrogenFuellingStationLibrary.Fluids.Hydrogen)
-          annotation (Placement(transformation(extent={{4,-26},{24,-6}})));
-        HydrogenFuellingStationLibrary.Tanks.Tank1 tank1_3(redeclare package
-            Medium = HydrogenFuellingStationLibrary.Fluids.Hydrogen, pInitial=
-              80000000)
-          annotation (Placement(transformation(extent={{-88,-6},{-66,2}})));
-        HydrogenFuellingStationLibrary.Tanks.Tank1 tank1_4(redeclare package
-            Medium = HydrogenFuellingStationLibrary.Fluids.Hydrogen, pInitial=
-              100000000)
-          annotation (Placement(transformation(extent={{-88,-26},{-66,-18}})));
-        HydrogenFuellingStationLibrary.Switches.WithStop.Switch4Flows switch4Flows(
-            control=1, control2=1)
-          annotation (Placement(transformation(extent={{-36,-10},{-24,14}})));
-        HydrogenFuellingStationLibrary.Mixers.VolumeMixer Mixer(
-            fixedInitialPressure=false, redeclare package Medium =
-              HydrogenFuellingStationLibrary.Fluids.Hydrogen)
-          annotation (Placement(transformation(extent={{-56,30},{-40,40}})));
-        HydrogenFuellingStationLibrary.Controls.ControlMultiplebanks
-          controlMultiplebanks(
-          Switch_pressure=2000000,
-          Tank1=30000000,
-          Tank2=90000000,
-          Tank3=110000000,
-          Tank4=90000000)
-          annotation (Placement(transformation(extent={{30,44},{60,78}})));
-        HydrogenFuellingStationLibrary.PressureLosses.PressureLoss pressureLoss(
-          inputChoice="Valve",
-          kv=0.06,
-          redeclare package Medium =
-              HydrogenFuellingStationLibrary.Fluids.Hydrogen,
-          pInitial=25000000)
-          annotation (Placement(transformation(extent={{44,-20},{60,-12}})));
-        HydrogenFuellingStationLibrary.HeatExchangers.HeatExchangerFixedTemperature
-          heatExchangerFixedTemperature(
-          SAEJ2601=false,
-          COP=1,
-          redeclare package Medium =
-              HydrogenFuellingStationLibrary.Fluids.Hydrogen,
-          T_hex=233.15)
-          annotation (Placement(transformation(extent={{24,-24},{44,-12}})));
-        HydrogenFuellingStationLibrary.PressureLosses.PressureLoss
-          pressureLoss1(
-          Length=10,
-          K_length=15,
-          redeclare package Medium =
-              HydrogenFuellingStationLibrary.Fluids.Hydrogen,
-          pInitial=30000000)
-          annotation (Placement(transformation(extent={{-18,22},{-2,30}})));
-      equation
-        medium=Medium.setState_pT(P_amb, T_amb);
-        s_0=Medium.specificEntropy(medium);
-        h_0=Medium.specificEnthalpy(medium);
-        u_0=h_0-P_amb*1/Medium.density(medium);
-         M=tank1_1.M+CHSS.M;
-         U=tank1_1.U+CHSS.U;
-         H=tank1_1.h*tank1_1.M+CHSS.h*CHSS.M;
-
-         SOC=CHSS.medium.d/40.2;
-
-      HRSinfo.P_amb=P_amb;
-      HRSinfo.P_start=P_start;
-      HRSinfo.FP=P_end;
-      HRSinfo.SOC=SOC_target;
-      HRSinfo.APRR=APRR;
-      HRSinfo.P_ref=P_ref;
-
-       if CHSS.p>=p_ending then
-            terminate("Final pressure reached");
-       end if;
-
-        connect(Mixer.portA, tank1_2.portA) annotation (Line(
-            points={{-54.9333,35.7143},{-60,35.7143},{-60,38},{-67.7,38}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(Mixer.portC, switch4Flows.in1) annotation (Line(
-            points={{-41.2444,31.4286},{-38,31.4286},{-38,9.2},{-34.6,9.2}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(tank1_1.portA, switch4Flows.in2) annotation (Line(
-            points={{-67.7,18},{-48,18},{-48,4.4},{-34.6,4.4}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(tank1_3.portA, switch4Flows.in3) annotation (Line(
-            points={{-67.7,-2},{-50,-2},{-50,-0.4},{-34.6,-0.4}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(tank1_4.portA, switch4Flows.in4) annotation (Line(
-            points={{-67.7,-22},{-50,-22},{-50,-5.2},{-34.6,-5.2}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(controlMultiplebanks.pp4, tank1_2.pp) annotation (Line(
-            points={{30,45.36},{-26,45.36},{-26,41.8},{-78,41.8}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(controlMultiplebanks.pp5, tank1_1.pp) annotation (Line(
-            points={{30,48.42},{-90,48.42},{-90,21.8},{-78,21.8}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(controlMultiplebanks.pp6, tank1_3.pp) annotation (Line(
-            points={{30,51.82},{-92,51.82},{-92,1.8},{-78,1.8}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(controlMultiplebanks.pp7, tank1_4.pp) annotation (Line(
-            points={{30,55.22},{-94,55.22},{-94,-18.2},{-78,-18.2}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(controlMultiplebanks.pp3, CHSS.pp) annotation (Line(
-            points={{59.7,61},{59.7,24.5},{82,24.5},{82,-12.2}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(controlMultiplebanks.pp3, controlMultiplebanks.pp8) annotation (Line(
-            points={{59.7,61},{38.85,61},{38.85,58.62},{30,58.62}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(controlMultiplebanks.pp3, controlMultiplebanks.pp9) annotation (Line(
-            points={{59.7,61},{38.85,61},{38.85,62.36},{30,62.36}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(controlMultiplebanks.pp3, controlMultiplebanks.pp10) annotation (Line(
-            points={{59.7,61},{38.85,61},{38.85,66.78},{30,66.78}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(controlMultiplebanks.pp3, controlMultiplebanks.pp11) annotation (Line(
-            points={{59.7,61},{39.85,61},{39.85,70.18},{30,70.18}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(controlMultiplebanks.pp3, controlMultiplebanks.pp12) annotation (Line(
-            points={{59.7,61},{38.85,61},{38.85,73.58},{30,73.58}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(controlMultiplebanks.pp3, controlMultiplebanks.pp13) annotation (Line(
-            points={{59.7,61},{38.85,61},{38.85,77.32},{30,77.32}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(controlMultiplebanks.pp1, ejector.pp1) annotation (Line(
-            points={{42,44.34},{42,-8},{12,-8},{12,-12}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(ejector.pp2, controlMultiplebanks.pp2) annotation (Line(
-            points={{18,-12},{48,-12},{48,44.34}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(pressureLoss.portB, CHSS.portA) annotation (Line(
-            points={{59.4,-16},{71.7,-16}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(ejector.car_tank, heatExchangerFixedTemperature.portA)
-          annotation (Line(
-            points={{20,-16},{26,-16}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(heatExchangerFixedTemperature.portB, pressureLoss.portA)
-          annotation (Line(
-            points={{42,-16},{44.2,-16}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(pressureLoss1.portA, Mixer.portB) annotation (Line(
-            points={{-17.8,26},{-34,26},{-34,35.7143},{-41.2444,35.7143}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(pressureLoss1.portB, ejector.lp_tank) annotation (Line(
-            points={{-2.6,26},{2,26},{2,-20},{8,-20}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(switch4Flows.out1, ejector.hp_tank) annotation (Line(
-            points={{-24,2},{-8,2},{-8,-12},{8,-12}},
-            color={0,0,0},
-            thickness=0.5));
-        annotation (Icon(coordinateSystem(preserveAspectRatio=false)), Diagram(
-              coordinateSystem(preserveAspectRatio=false)));
-      end Ejector_Cascade_Pressure_Losses;
-
-      model Ejector_Cascade_Pressure_Losses2
-
-        import SI = Modelica.SIunits;
-        import HydrogenFuellingStationLibrary = HydrogenFuelingStationLibrary;
-
-         replaceable package Medium =
-            HydrogenFuellingStationLibrary.Fluids.Hydrogen
-         constrainedby Modelica.Media.Interfaces.PartialMedium
-                                                     annotation (choicesAllMatching=true);
-
-      SI.InternalEnergy U;
-      SI.Mass M;
-      SI.Enthalpy H;
-
-      Medium.ThermodynamicState medium;
-      inner SI.SpecificEntropy s_0;
-      inner SI.SpecificEnthalpy h_0;
-      inner SI.SpecificInternalEnergy u_0;
-      inner parameter SI.Temperature   T_amb=HRSinfo.T_amb;
-      // inner parameter SI.Pressure P_amb=101e3;
-      inner parameter SI.Temperature T_cool=-40+273;
-      parameter SI.Pressure p_ending=80e6;
-      inner SI.Pressure  P_amb;
-      inner SI.Pressure P_start;
-      inner Real SOC_target;
-      inner SI.Pressure P_end;
-      inner SI.Pressure P_ref;
-      inner Real APRR;
-
-      inner Integer z1=controlMultiplebanks.z1;
-      inner Integer z2=controlMultiplebanks.z2;
-      inner Integer z3=0;
-      inner Integer z4=controlMultiplebanks.z4;
-      inner Integer z5=0;
-
-      Real SOC;
-
-        HydrogenFuellingStationLibrary.HRSInfo HRSinfo
-          annotation (Placement(transformation(extent={{68,72},{88,92}})));
-
-        HydrogenFuellingStationLibrary.Tanks.Tank1 tank1_1(redeclare package
-            Medium = HydrogenFuellingStationLibrary.Fluids.Hydrogen, pInitial=
-              90000000)
-          annotation (Placement(transformation(extent={{-88,14},{-66,22}})));
-        HydrogenFuellingStationLibrary.Tanks.Tank1 tank1_2(redeclare package
-            Medium = HydrogenFuellingStationLibrary.Fluids.Hydrogen, pInitial=
-              30000000)
-          annotation (Placement(transformation(extent={{-88,34},{-66,42}})));
-        HydrogenFuellingStationLibrary.Tanks.Tank1 CHSS(
-          redeclare package Medium =
-              HydrogenFuellingStationLibrary.Fluids.Hydrogen,
-          V=0.15,
-          pInitial=25000000)
-          annotation (Placement(transformation(extent={{78,-20},{56,-12}})));
-
-        HydrogenFuellingStationLibrary.Ejectors.Ejector          ejector(
-            redeclare package Medium =
-              HydrogenFuellingStationLibrary.Fluids.Hydrogen)
-          annotation (Placement(transformation(extent={{-10,-26},{10,-6}})));
-        HydrogenFuellingStationLibrary.Tanks.Tank1 tank1_3(redeclare package
-            Medium =
-              HydrogenFuellingStationLibrary.Fluids.Hydrogen, pInitial=110000000)
-          annotation (Placement(transformation(extent={{-88,-6},{-66,2}})));
-        HydrogenFuellingStationLibrary.Tanks.Tank1 tank1_4(redeclare package
-            Medium =
-              HydrogenFuellingStationLibrary.Fluids.Hydrogen, pInitial=110000000)
-          annotation (Placement(transformation(extent={{-88,-26},{-66,-18}})));
-        HydrogenFuellingStationLibrary.Switches.WithStop.Switch4Flows switch4Flows(
-            control=1, control2=1)
-          annotation (Placement(transformation(extent={{-34,-24},{-22,0}})));
-        HydrogenFuellingStationLibrary.Controls.ControlMultiplebanks
-          controlMultiplebanks(
-          Switch_pressure=2000000,
-          Tank1=30000000,
-          Tank2=90000000,
-          Tank3=110000000,
-          Tank4=110000000)
-          annotation (Placement(transformation(extent={{32,44},{62,78}})));
-        HydrogenFuellingStationLibrary.PressureLosses.PressureLoss pressureLoss(
-          redeclare package Medium =
-              HydrogenFuellingStationLibrary.Fluids.Hydrogen,
-          inputChoice="Valve",
-          kv=0.06,
-          pInitial=25000000)
-          annotation (Placement(transformation(extent={{30,-20},{46,-12}})));
-
-        HydrogenFuellingStationLibrary.HeatExchangers.HeatExchangerFixedTemperature
-          heatExchangerFixedTemperature(
-          redeclare package Medium =
-              HydrogenFuellingStationLibrary.Fluids.Hydrogen,
-          SAEJ2601=false,
-          COP=1,
-          T_hex=233.15)
-          annotation (Placement(transformation(extent={{10,-24},{30,-12}})));
-
-        HydrogenFuellingStationLibrary.Switches.WithOutStop.Switch3FlowsEjector
-          switch3FlowsEjector(control=1)
-          annotation (Placement(transformation(extent={{-36,12},{-24,24}})));
-      equation
-        medium=Medium.setState_pT(P_amb, T_amb);
-        s_0=Medium.specificEntropy(medium);
-        h_0=Medium.specificEnthalpy(medium);
-        u_0=h_0-P_amb*1/Medium.density(medium);
-         M=tank1_1.M+CHSS.M;
-         U=tank1_1.U+CHSS.U;
-         H=tank1_1.h*tank1_1.M+CHSS.h*CHSS.M;
-
-         SOC=CHSS.medium.d/40.2;
-
-      HRSinfo.P_amb=P_amb;
-      HRSinfo.P_start=P_start;
-      HRSinfo.FP=P_end;
-      HRSinfo.SOC=SOC_target;
-      HRSinfo.APRR=APRR;
-      HRSinfo.P_ref=P_ref;
-
-       if CHSS.p>=p_ending then
-            terminate("Final pressure reached");
-       end if;
-
-        connect(controlMultiplebanks.pp4, tank1_2.pp) annotation (Line(
-            points={{32,45.36},{-26,45.36},{-26,41.8},{-78,41.8}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(controlMultiplebanks.pp5, tank1_1.pp) annotation (Line(
-            points={{32,48.42},{-90,48.42},{-90,21.8},{-78,21.8}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(controlMultiplebanks.pp6, tank1_3.pp) annotation (Line(
-            points={{32,51.82},{-92,51.82},{-92,1.8},{-78,1.8}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(controlMultiplebanks.pp7, tank1_4.pp) annotation (Line(
-            points={{32,55.22},{-94,55.22},{-94,-18.2},{-78,-18.2}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(controlMultiplebanks.pp3, CHSS.pp) annotation (Line(
-            points={{61.7,61},{61.7,24.5},{68,24.5},{68,-12.2}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(controlMultiplebanks.pp3, controlMultiplebanks.pp8) annotation (Line(
-            points={{61.7,61},{38.85,61},{38.85,58.62},{32,58.62}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(controlMultiplebanks.pp3, controlMultiplebanks.pp9) annotation (Line(
-            points={{61.7,61},{38.85,61},{38.85,62.36},{32,62.36}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(controlMultiplebanks.pp3, controlMultiplebanks.pp10) annotation (Line(
-            points={{61.7,61},{38.85,61},{38.85,66.78},{32,66.78}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(controlMultiplebanks.pp3, controlMultiplebanks.pp11) annotation (Line(
-            points={{61.7,61},{39.85,61},{39.85,70.18},{32,70.18}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(controlMultiplebanks.pp3, controlMultiplebanks.pp12) annotation (Line(
-            points={{61.7,61},{38.85,61},{38.85,73.58},{32,73.58}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(controlMultiplebanks.pp3, controlMultiplebanks.pp13) annotation (Line(
-            points={{61.7,61},{38.85,61},{38.85,77.32},{32,77.32}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(controlMultiplebanks.pp1, ejector.pp1) annotation (Line(
-            points={{44,44.34},{44,-8},{-2,-8},{-2,-12}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(ejector.pp2, controlMultiplebanks.pp2) annotation (Line(
-            points={{4,-12},{50,-12},{50,44.34}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(pressureLoss.portB, CHSS.portA) annotation (Line(
-            points={{45.4,-16},{57.7,-16}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(switch4Flows.out1, ejector.hp_tank) annotation (Line(
-            points={{-22,-12},{-6,-12}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(ejector.car_tank, heatExchangerFixedTemperature.portA)
-          annotation (Line(
-            points={{6,-16},{12,-16}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(heatExchangerFixedTemperature.portB, pressureLoss.portA)
-          annotation (Line(
-            points={{28,-16},{30.2,-16}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(tank1_2.portA, switch4Flows.in1) annotation (Line(
-            points={{-67.7,38},{-50,38},{-50,-4.8},{-32.6,-4.8}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(tank1_1.portA, switch4Flows.in2) annotation (Line(
-            points={{-67.7,18},{-50,18},{-50,-9.6},{-32.6,-9.6}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(tank1_3.portA, switch4Flows.in3) annotation (Line(
-            points={{-67.7,-2},{-50,-2},{-50,-14.4},{-32.6,-14.4}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(tank1_4.portA, switch4Flows.in4) annotation (Line(
-            points={{-67.7,-22},{-50,-22},{-50,-19.2},{-32.6,-19.2}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(tank1_2.portA, switch3FlowsEjector.in1) annotation (Line(
-            points={{-67.7,38},{-44,38},{-44,22},{-34.6,22}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(tank1_1.portA, switch3FlowsEjector.in2) annotation (Line(
-            points={{-67.7,18},{-34.6,18}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(tank1_3.portA, switch3FlowsEjector.in3) annotation (Line(
-            points={{-67.7,-2},{-54,-2},{-54,14},{-34.6,14}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(switch3FlowsEjector.out1, ejector.lp_tank) annotation (Line(
-            points={{-24,18},{-18,18},{-18,-20},{-6,-20}},
-            color={0,0,0},
-            thickness=0.5));
-        annotation (Icon(coordinateSystem(preserveAspectRatio=false)), Diagram(
-              coordinateSystem(preserveAspectRatio=false)));
-      end Ejector_Cascade_Pressure_Losses2;
-    end EjectorModels;
-
-    package MC_Models
-      model System
-        import SI = Modelica.SIunits;
-
-      /*********************** Thermodynamic property call ***********************************/
-         replaceable package Medium =
-            HydrogenFuelingStationLibrary.Fluids.Hydrogen
-                                                     annotation (choicesAllMatching=true);
-      Medium.ThermodynamicState medium;
-      /****************** General parameters *******************/
-
-      // Real   T_test=Medium.temperature_ph(p=5.2e+7, h=3485433);
-
-
-      // T_cool
-
-      inner String  TemperatureClass;
-      inner SI.Pressure P_amb=101000;
-      parameter SI.Density Density_check=Medium.density_pT(p=600e5, T=273-30);
-       inner parameter SI.Temperature  T_amb=combined_routines.T_amb;
-      // inner SI.Temperature   T_cool=HRSinfo.T_cool;
-      // inner SI.Pressure  P_amb;
-      inner parameter SI.Pressure P_start=CHSS.pInitial;
-      // inner Real SOC_target;
-       inner SI.Pressure P_end;
-      // inner SI.Pressure P_ref;
-      // inner Real APRR;
-
-      inner SI.SpecificEntropy s_0;
-      inner SI.SpecificEnthalpy h_0;
-      inner SI.SpecificInternalEnergy u_0;
-
-      inner Integer z1;
-      inner Integer z2;
-      inner Integer z3;
-      inner Integer z4;
-      inner Integer z5=0;
-
-      //   HRSInfo                                      HRSinfo(Fueling_protocol=1, T_amb=
-      //         298.15)
-      //     annotation (Placement(transformation(extent={{80,80},{100,100}})));
-      /****************** equations *******************/
-        HydrogenFuelingStationLibrary.Tanks.Tank1 tank1_1(
-          redeclare package Medium =
-              HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-          Adiabatic=true,
-          V=2,
-          pInitial=90000000)
-          annotation (Placement(transformation(extent={{-186,-28},{-164,-20}})));
-        HydrogenFuelingStationLibrary.Tanks.Tank1_MC CHSS(
-          redeclare package Medium =
-              HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-          Adiabatic=false,
-          V=0.129,
-          pInitial=5000000)
-          annotation (Placement(transformation(extent={{90,12},{68,20}})));
-        PressureLosses.AveragePressureRampRateMC
-          averagePressureRampRateNewSystem(
-          redeclare package Medium =
-              HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-          fueling_method=2,
-          APRR2=24900000,
-          pInitial=5000000,
-          TInitial=239.15)
-          annotation (Placement(transformation(extent={{-8,12},{4,22}})));
-        HydrogenFuelingStationLibrary.PressureLosses.ReductionValve reductionValve(
-          redeclare package Medium =
-              HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-          pInitialIn=45000000,
-          pInitialOut=5000000)
-          annotation (Placement(transformation(extent={{-112,12},{-100,20}})));
-        HydrogenFuelingStationLibrary.PressureLosses.PressureLoss pressureLoss(
-          redeclare package Medium =
-              HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-          kp=0.45,
-          Length=25,
-          K_length=22.5,
-          inputChoice="Valve",
-          kv=0.1,
-          pInitial=5000000)
-          annotation (Placement(transformation(extent={{42,12},{58,20}})));
-        HydrogenFuelingStationLibrary.PressureLosses.PressureLoss pressureLoss1(
-          redeclare package Medium =
-              HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-          kv=1,
-          kp=0.45,
-          inputChoice="Tube",
-          Length=25,
-          Roughness=0.000007,
-          K_length=22.5,
-          pInitial=5000000)
-          annotation (Placement(transformation(extent={{-84,12},{-68,20}})));
-        HydrogenFuelingStationLibrary.PressureLosses.PressureLoss_MC pressureLoss2(
-          redeclare package Medium =
-              HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-          kv=0.08,
-          Length=10,
-          K_length=15.5,
-          inputChoice="Filter and Mass flow meter",
-          kp=0.025,
-          pInitial=5000000)
-          annotation (Placement(transformation(extent={{14,12},{30,20}})));
-        FuelingProcedure.FuelingProtocol                                    combined_routines(
-          CapacityCategory="A",
-          TemperatureClass="T40",
-          PressureClass="H70",
-          Communication=true,
-          T_amb=298.15,
-          p_initial=5000000,
-          redeclare model FuellingProcedures = FuelingProcedure.BaseClass.APRR)
-          annotation (Placement(transformation(extent={{46,38},{92,78}})));
-
-        HeatExchangers.HeatExchangerWithRampDown                           heatExchangerFixedTemperature(
-          COP=1,
-          redeclare package Medium =
-              HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-          T_hex_constant=true,
-          T_hex_con=236.15)
-          annotation (Placement(transformation(extent={{-64,8},{-44,20}})));
-        HydrogenFuelingStationLibrary.Tanks.Tank1 tank1_2(
-          redeclare package Medium =
-              HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-          Adiabatic=true,
-          V=3,
-          pInitial=65000000)
-          annotation (Placement(transformation(extent={{-186,8},{-164,16}})));
-        HydrogenFuelingStationLibrary.Tanks.Tank1 tank1_3(
-          redeclare package Medium =
-              HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-          Adiabatic=true,
-          V=4,
-          pInitial=45000000)
-          annotation (Placement(transformation(extent={{-186,40},{-164,48}})));
-        HydrogenFuelingStationLibrary.Switches.WithOutStop.Switch3Flows switch3Flows(control=1)
-          annotation (Placement(transformation(extent={{-138,10},{-126,22}})));
-        HydrogenFuelingStationLibrary.Controls.ControlMultiplebanks control(
-            Switch_pressure=5000000)
-          annotation (Placement(transformation(extent={{-26,68},{2,96}})));
-        HydrogenFuelingStationLibrary.HeatTransfer.HeatTransferTank heatTransferTank(LInner=
-              1.027, h_charging=300)
-          annotation (Placement(transformation(extent={{72,-14},{92,6}})));
-        HydrogenFuelingStationLibrary.PressureLosses.PressureLoss pressureLoss3(
-          redeclare package Medium =
-              HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-          kv=1,
-          kp=0.45,
-          inputChoice="Tube",
-          Length=10,
-          Roughness=0.000007,
-          K_length=15,
-          pInitial=5000000)
-          annotation (Placement(transformation(extent={{-36,12},{-20,20}})));
-        HydrogenFuelingStationLibrary.HeatTransfer.HeatTransferTank heatTransferTank1(Charging=
-              false)
-          annotation (Placement(transformation(extent={{-184,16},{-164,36}})));
-        HydrogenFuelingStationLibrary.HeatTransfer.HeatTransferTank heatTransferTank2(Charging=
-              false)
-          annotation (Placement(transformation(extent={{-186,-18},{-166,2}})));
-        HydrogenFuelingStationLibrary.HeatTransfer.HeatTransferTank heatTransferTank3(Charging=
-              false)
-          annotation (Placement(transformation(extent={{-186,-54},{-166,-34}})));
-      equation
-
-        control.z1=z1;
-        control.z2=z2;
-        control.z3=z3;
-        control.z4=z4;
-        medium=Medium.setState_pT(P_amb, T_amb);
-
-      s_0=medium.s;
-      h_0=medium.h;
-      u_0=h_0-P_amb*1/medium.d;
-
-      // HRSinfo.P_amb=P_amb;
-        TemperatureClass=combined_routines.TemperatureClass;
-
-       combined_routines.p_end=P_end;
-      // HRSinfo.SOC=SOC_target;
-      // HRSinfo.APRR=APRR;
-      // HRSinfo.P_ref=P_ref;
-
-      /**************** RESULTS *******************************/
-
-      /*************vehicle parameters***************/
-
-      // results.T_chss=CHSS.MC_port.T_chss;
-      // results.p_chss=CHSS.MC_port.p_chss;
-      // results.SOC_level=CHSS.SOC;
-      // results.m_flow/1000=CHSS.portA.m_flow;
-      // results.Mass=CHSS.M;
-      //
-      // /***************** station parameters **********/
-      //
-      // results.p_station/1e6=combined_routines.p_station;
-      // results.T_fuel=combined_routines.T_station;
-      // results.APRR_ramp=averagePressureRampRateNewSystem.portB.p;
-      // results.p_limit_high/1e6=combined_routines.p_limit_high;
-      //
-      // /******************* general MC parameters *******/
-      //
-      // results.p_limit_low/1e6=combined_routines.p_limit_low;
-      // results.p_final/1e6=combined_routines.p_final;
-      //
-      // results.MAT_exp=combined_routines.MAT_exp;
-      // results.MAT_c=combined_routines.MAT_c;
-      // results.MAT_0=combined_routines.MAT_0;
-      // results.MAT_30=combined_routines.MAT_30;
-      //
-      // results.p_target_comm/1e6=combined_routines.p_target_comm;
-      // results.p_target_non_comm/1e6=combined_routines.p_target_non_comm;
-      // results.p_limit_comm/1e6=combined_routines.p_limit_comm;
-      //
-      // results.PRR_per_minute=combined_routines.PRR_dummy;
-      // results.p_ramp/1e6=combined_routines.p_ramp;
-      // results.PRR=combined_routines.PRR;
-      // results.PRR_calc=combined_routines.PRR_calc;
-      // results.PRR_cap=combined_routines.PRR_cap;
-      // results.APRR_used*10=averagePressureRampRateNewSystem.APRR_used;
-      // results.BankPressure=reductionValve.pp1.p;
-      //
-      // results.t_final=combined_routines.t_final;
-      // results.t_final_large=combined_routines.t_final_large;
-      // results.t_final_small=combined_routines.t_final_small;
-      //
-      //  results.ED_pressureLoss=pressureLoss.E_D;
-      //  results.ED_pressureLoss1=pressureLoss1.E_D;
-      //  results.ED_pressureLoss2=pressureLoss2.E_D;
-      //  results.ED_pressureLoss3=pressureLoss3.E_D;
-      //  results.ED_tank1_1=tank1_1.E_D;
-      //  results.ED_tank1_2=tank1_2.E_D;
-      //  results.ED_tank1_3=tank1_3.E_D;
-      //  results.ED_CHSS=CHSS.E_D;
-      //  results.ED_HEX=heatExchangerFixedTemperature.E_D;
-      //  results.ED_reductionValve=reductionValve.E_D;
-
-        connect(pressureLoss1.portA, reductionValve.portB) annotation (Line(
-            points={{-83.8,16},{-100,16}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(pressureLoss2.portB, pressureLoss.portA) annotation (Line(
-            points={{29.4,16},{42.2,16}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(combined_routines.pressurePort, averagePressureRampRateNewSystem.pp1)
-          annotation (Line(
-            points={{48.3,58},{-2,58},{-2,20.8}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(heatExchangerFixedTemperature.portA, pressureLoss1.portB) annotation (
-           Line(
-            points={{-62,16},{-62,16},{-68.6,16}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(averagePressureRampRateNewSystem.portB, pressureLoss2.portA)
-          annotation (Line(
-            points={{3.2,16},{14.2,16}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(switch3Flows.in1, tank1_3.portA) annotation (Line(
-            points={{-136.6,20},{-136,20},{-136,44},{-165.7,44}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(switch3Flows.in3, tank1_1.portA) annotation (Line(
-            points={{-136.6,12},{-136,12},{-136,-24},{-165.7,-24}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(switch3Flows.out1, reductionValve.portA) annotation (Line(
-            points={{-126,16},{-112,16}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(control.pp4, tank1_3.pp) annotation (Line(
-            points={{-26,69.12},{-146,69.12},{-146,47.8},{-176,47.8}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(control.pp5, tank1_2.pp) annotation (Line(
-            points={{-26,71.64},{-146,71.64},{-146,15.8},{-176,15.8}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(control.pp6, tank1_1.pp) annotation (Line(
-            points={{-26,74.44},{-146,74.44},{-146,-20.2},{-176,-20.2}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(control.pp1, reductionValve.pp1) annotation (Line(
-            points={{-14.8,68.28},{-110,68.28},{-110,18.8}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(control.pp2, reductionValve.pp2) annotation (Line(
-            points={{-9.2,68.28},{-102,68.28},{-102,18.8}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(control.pp3, CHSS.pp) annotation (Line(
-            points={{1.72,82},{36,82},{36,19.8},{80,19.8}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(control.pp8, CHSS.pp) annotation (Line(
-            points={{-26,80.04},{8,80.04},{8,100},{36,100},{36,19.8},{80,19.8}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(control.pp9, CHSS.pp) annotation (Line(
-            points={{-26,83.12},{8,83.12},{8,100},{36,100},{36,19.8},{80,19.8}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(control.pp10, CHSS.pp) annotation (Line(
-            points={{-26,86.76},{8,86.76},{8,100},{36,100},{36,19.8},{80,19.8}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(control.pp11, CHSS.pp) annotation (Line(
-            points={{-26,89.56},{8,89.56},{8,100},{36,100},{36,19.8},{80,19.8}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(control.pp12, CHSS.pp) annotation (Line(
-            points={{-26,92.36},{8,92.36},{8,100},{36,100},{36,19.8},{80,19.8}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(control.pp13, CHSS.pp) annotation (Line(
-            points={{-26,95.44},{8,95.44},{8,100},{36,100},{36,19.8},{80,19.8}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(control.pp7, CHSS.pp) annotation (Line(
-            points={{-26,77.24},{8,77.24},{8,96},{36,96},{36,19.8},{80,19.8}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(heatTransferTank.heatFlow, CHSS.heatFlow) annotation (Line(
-            points={{80.6,4.4},{80.6,6.2},{80,6.2},{80,12.1}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(pressureLoss3.portB, averagePressureRampRateNewSystem.portA)
-          annotation (Line(
-            points={{-20.6,16},{-7,16}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(pressureLoss3.portA, heatExchangerFixedTemperature.portB)
-          annotation (Line(
-            points={{-35.8,16},{-35.8,16},{-46,16}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(tank1_3.heatFlow, heatTransferTank1.heatFlow) annotation (Line(
-            points={{-176,40.1},{-176,40.1},{-176,34.4},{-175.4,34.4}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(tank1_2.heatFlow, heatTransferTank2.heatFlow) annotation (Line(
-            points={{-176,8.1},{-176,8.1},{-176,0.4},{-177.4,0.4}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(tank1_1.heatFlow, heatTransferTank3.heatFlow) annotation (Line(
-            points={{-176,-27.9},{-178,-27.9},{-178,-35.6},{-177.4,-35.6}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(pressureLoss.portB, CHSS.portA) annotation (Line(
-            points={{57.4,16},{69.7,16}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(combined_routines.Vehicle_port, CHSS.MC_port) annotation (Line(points={{78.66,
-                47.2},{78.66,40},{68,40},{68,30},{87.4,30},{87.4,19.8}},
-                                                                    color={0,255,0}));
-        connect(combined_routines.Station_port, pressureLoss2.MC_port) annotation (
-            Line(points={{57.5,47.2},{17.8,47.2},{17.8,19}},color={170,255,170}));
-        connect(tank1_2.portA, switch3Flows.in2) annotation (Line(
-            points={{-165.7,12},{-150,12},{-150,16},{-136.6,16}},
-            color={0,0,0},
-            thickness=0.5));
-          annotation (Diagram(coordinateSystem(preserveAspectRatio=false, extent={{-200,
-                  -60},{100,100}})),  Icon(coordinateSystem(extent={{-200,-60},{
-                  100,100}})));
-      end System;
-
-      model SystemWithComp
-        import SI = Modelica.SIunits;
-        import HydrogenFuelingStationLibrary;
-
-      /*********************** Thermodynamic property call ***********************************/
-       replaceable package Medium =
-            HydrogenFuelingStationLibrary.Fluids.Hydrogen (onePhase=true)
-          constrainedby Modelica.Media.Interfaces.PartialMedium
-                                                     annotation (choicesAllMatching=true);
-      Medium.ThermodynamicState medium;
-      /****************** General parameters *******************/
-      inner parameter SI.Temperature T_amb=HRSinfo.T_amb;
-      inner SI.Temperature  T_cool=HRSinfo.T_cool;
-      inner SI.Pressure  P_amb;
-      inner SI.Pressure P_start;
-      inner Real SOC_target;
-      inner SI.Pressure P_end;
-      inner SI.Pressure P_ref;
-      inner Real APRR;
-
-      inner SI.SpecificEntropy s_0;
-      inner SI.SpecificEnthalpy h_0;
-      inner SI.SpecificInternalEnergy u_0;
-
-      inner Integer z1;
-      inner Integer z2;
-      inner Integer z3;
-      inner Integer z4;
-      inner Integer z5(start=0, fixed=true);
-        HydrogenFuelingStationLibrary.HRSInfo  HRSinfo(T_amb=298.15, P_start=5000000)
-          annotation (Placement(transformation(extent={{-138,80},{-118,100}})));
-      /****************** equations *******************/
-        HydrogenFuelingStationLibrary.Tanks.Tank1 Tank1(
-          Adiabatic=false,
-          redeclare package Medium =
-              HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-          pInitial=60000000)
-          annotation (Placement(transformation(extent={{-116,-8},{-94,0}})));
-        HydrogenFuelingStationLibrary.Tanks.Tank1 Tank2(
-          Adiabatic=false,
-          redeclare package Medium =
-              HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-          pInitial=80000000)
-          annotation (Placement(transformation(extent={{-118,-38},{-96,-30}})));
-        HydrogenFuelingStationLibrary.Tanks.Tank1 Tank3(
-          Adiabatic=false,
-          fixedInitialPressure=true,
-          redeclare package Medium =
-              HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-          pInitial=120000000)
-          annotation (Placement(transformation(extent={{-116,-66},{-94,-58}})));
-        HydrogenFuelingStationLibrary.Tanks.Tank1 Bank(
-          V=100,
-          Adiabatic=false,
-          redeclare package Medium =
-              HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-          pInitial=30000000)
-          annotation (Placement(transformation(extent={{-116,28},{-94,36}})));
-        HydrogenFuelingStationLibrary.Tanks.Tank1_MC CHSS(
-          Adiabatic=false,
-          redeclare package Medium =
-              HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-          V=0.14,
-          pInitial=5000000) annotation (Placement(transformation(extent={{152,-52},{132,-44}})));
-        HydrogenFuelingStationLibrary.PressureLosses.PressureLoss pressureLoss(
-          redeclare package Medium =
-              HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-          inputChoice="Valve",
-          kv=0.1,
-          pInitial=5000000)
-          annotation (Placement(transformation(extent={{112,-44},{128,-52}})));
-        HydrogenFuelingStationLibrary.PressureLosses.AveragePressureRampRateMC
-          averagePressureRampRateNewSystem_MC2_1(
-          redeclare package Medium =
-              HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-          fueling_method=2,
-          pInitial=5000000)
-          annotation (Placement(transformation(extent={{74,-52},{86,-40}})));
-        HydrogenFuelingStationLibrary.PressureLosses.PressureLoss pressureLoss1(
-          Length=25,
-          K_length=22.5,
-          redeclare package Medium =
-              HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-          pInitial=5000000)
-          annotation (Placement(transformation(extent={{54,-44},{70,-52}})));
-        HydrogenFuelingStationLibrary.PressureLosses.PressureLoss pressureLoss2(
-          kv=0.5,
-          inputChoice="Tube",
-          Length=10,
-          K_length=15,
-          redeclare package Medium =
-              HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-          pInitial=30000000)
-          annotation (Placement(transformation(extent={{-10,-44},{6,-52}})));
-        HydrogenFuelingStationLibrary.HeatTransfer.WallPieces.HeatExchangerFixedTemperatureOneWay
-          heatExchangerFixedTemperature(
-          COP=1.5,
-          redeclare package Medium =
-              HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-          SAEJ2601=false,
-          T_hex=245.15)
-          annotation (Placement(transformation(extent={{32,-56},{52,-44}})));
-        HydrogenFuelingStationLibrary.PressureLosses.ReductionValve reductionValve(
-          redeclare package Medium =
-              HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-          pInitialIn=30000000,
-          pInitialOut=5000000)
-          annotation (Placement(transformation(extent={{14,-54},{26,-46}})));
-        HydrogenFuelingStationLibrary.Switches.WithOutStop.Switch4Flows switch4Flows(control=1)
-          annotation (Placement(transformation(extent={{-30,-56},{-18,-44}})));
-        HydrogenFuelingStationLibrary.Compressor.CompressorWithStop compressorWithStop(Stop=3,
-            redeclare package Medium =
-              HydrogenFuelingStationLibrary.Fluids.Hydrogen)
-          annotation (Placement(transformation(extent={{-90,30},{-76,38}})));
-        HydrogenFuelingStationLibrary.Switches.WithStop.Switch3Flows switch3Flows(control=2,
-            control2=2)
-          annotation (Placement(transformation(extent={{-50,0},{-36,16}})));
-        HydrogenFuelingStationLibrary.PressureLosses.PressureLoss pressureLoss4(
-          Length=25,
-          K_length=22.5,
-          redeclare package Medium =
-              HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-          pInitial=52000000)
-          annotation (Placement(transformation(extent={{-52,36},{-36,28}})));
-        HydrogenFuelingStationLibrary.Mixers.VolumeMixer idealMixing(
-          fixedInitialPressure=false,
-          redeclare package Medium =
-              HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-          pInitial=52000000)
-          annotation (Placement(transformation(extent={{-86,-16},{-70,-6}})));
-        HydrogenFuelingStationLibrary.Mixers.VolumeMixer idealMixing1(
-          fixedInitialPressure=false,
-          redeclare package Medium =
-              HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-          pInitial=74000000)
-          annotation (Placement(transformation(extent={{-86,-42},{-70,-32}})));
-        HydrogenFuelingStationLibrary.Mixers.VolumeMixer idealMixing2(
-          fixedInitialPressure=false,
-          redeclare package Medium =
-              HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-          pInitial=95000000)
-          annotation (Placement(transformation(extent={{-86,-70},{-70,-60}})));
-        HydrogenFuelingStationLibrary.Controls.ControlMultiplebanks control(
-          z3(fixed=true),
-          Tank1=60000000,
-          Tank2=80000000,
-          Tank3=100000000)
-          annotation (Placement(transformation(extent={{6,66},{38,96}})));
-        HydrogenFuelingStationLibrary.HeatExchangers.HeatExchangerFixedTemperature
-          heatExchangerFixedTemperature1(
-          SAEJ2601=false,
-          COP=2,
-          redeclare package Medium =
-              HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-          T_hex=245.15)
-          annotation (Placement(transformation(extent={{-76,24},{-56,36}})));
-        HydrogenFuelingStationLibrary.HeatTransfer.HeatTransferTank heatTransferTank(
-          xCFRP=0.035,
-          dInner=0.46,
-          xLiner=0.006,
-          h_charging=450)
-          annotation (Placement(transformation(extent={{134,-78},{154,-58}})));
-        HydrogenFuelingStationLibrary.HeatTransfer.HeatTransferTank heatTransferTank1(
-          tank=1,
-          Charging=false,
-          xCFRP=0.05,
-          xLiner=0.1,
-          dInner=0.462,
-          LInner=581)
-          annotation (Placement(transformation(extent={{-114,6},{-94,26}})));
-        HydrogenFuelingStationLibrary.HeatTransfer.HeatTransferTank heatTransferTank2(
-          dInner=0.46,
-          LInner=5.5,
-          tank=3,
-          xCFRP=0.04)
-          annotation (Placement(transformation(extent={{-114,-32},{-94,-12}})));
-        HydrogenFuelingStationLibrary.HeatTransfer.HeatTransferTank heatTransferTank3(
-          dInner=0.046,
-          LInner=5.5,
-          xCFRP=0.04)
-          annotation (Placement(transformation(extent={{-116,-60},{-96,-40}})));
-        HydrogenFuelingStationLibrary.HeatTransfer.HeatTransferTank heatTransferTank4(
-          dInner=0.46,
-          LInner=5.5,
-          xCFRP=0.04)
-          annotation (Placement(transformation(extent={{-114,-88},{-94,-68}})));
-        HydrogenFuelingStationLibrary.PressureLosses.PressureLoss_MC
-                                       pressureLoss3(
-          redeclare package Medium =
-              HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-          kv=0.08,
-          Length=10,
-          K_length=15.5,
-          inputChoice="Filter and Mass flow meter",
-          kp=0.025,
-          pInitial=5000000)
-          annotation (Placement(transformation(extent={{92,-52},{108,-44}})));
-        HydrogenFuelingStationLibrary.FuelingProcedure.FuelingProtocol
-                                                   FP(
-          CapacityCategory="B",
-          PressureClass="H70",
-          TemperatureClass="T40",
-          Communication=false,
-          ColdDispenser=true,
-          T_ColdDisp="10",
-          redeclare model FuellingProcedures =
-              HydrogenFuelingStationLibrary.FuelingProcedure.BaseClass.MC,
-          redeclare package Medium =
-              HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-          p_initial=5000000)
-          annotation (Placement(transformation(extent={{92,10},{138,50}})));
-      equation
-        medium=Medium.setState_pT(P_amb, T_amb);
-
-        control.z1=z1;
-        control.z2=z2;
-        control.z3=z3;
-        control.z4=z4;
-
-      s_0=medium.s;
-      h_0=medium.h;
-      u_0=h_0-P_amb*1/medium.d;
-
-      HRSinfo.P_amb=P_amb;
-      CHSS.p=P_start;
-
-      FP.p_end*1e6=P_end;
-
-      HRSinfo.SOC=SOC_target;
-      HRSinfo.APRR=APRR;
-      HRSinfo.P_ref=P_ref;
-
-        connect(pressureLoss.portB, CHSS.portA) annotation (Line(
-            points={{127.4,-48},{133.545,-48}},
-            color={0,0,0},
-            thickness=0.5,
-            smooth=Smooth.None));
-        connect(pressureLoss1.portB, averagePressureRampRateNewSystem_MC2_1.portA) annotation (Line(
-            points={{69.4,-48},{74,-48},{74,-47.2},{75,-47.2}},
-            color={0,0,0},
-            thickness=0.5,
-            smooth=Smooth.None));
-        connect(heatExchangerFixedTemperature.portB, pressureLoss1.portA) annotation (
-           Line(
-            points={{50,-48},{54.2,-48}},
-            color={0,0,0},
-            thickness=0.5,
-            smooth=Smooth.None));
-        connect(reductionValve.portB, heatExchangerFixedTemperature.portA)
-          annotation (Line(
-            points={{26,-50},{30,-50},{30,-48},{34,-48}},
-            color={0,0,0},
-            thickness=0.5,
-            smooth=Smooth.None));
-        connect(reductionValve.portA, pressureLoss2.portB) annotation (Line(
-            points={{14,-50},{10,-50},{10,-48},{5.4,-48}},
-            color={0,0,0},
-            thickness=0.5,
-            smooth=Smooth.None));
-        connect(pressureLoss4.portB, switch3Flows.out1) annotation (Line(
-            points={{-36.6,32},{-32,32},{-32,8},{-38,8}},
-            color={0,0,0},
-            thickness=0.5,
-            smooth=Smooth.None));
-        connect(idealMixing.portA, Tank1.portA) annotation (Line(
-            points={{-84.9333,-10.2857},{-90.3167,-10.2857},{-90.3167,-4},{
-                -95.7,-4}},
-            color={0,0,0},
-            thickness=0.5,
-            smooth=Smooth.None));
-
-        connect(idealMixing1.portA, Tank2.portA) annotation (Line(
-            points={{-84.9333,-36.2857},{-90.3167,-36.2857},{-90.3167,-34},{
-                -97.7,-34}},
-            color={0,0,0},
-            thickness=0.5,
-            smooth=Smooth.None));
-
-        connect(idealMixing2.portA, Tank3.portA) annotation (Line(
-            points={{-84.9333,-64.2857},{-90.3167,-64.2857},{-90.3167,-62},{
-                -95.7,-62}},
-            color={0,0,0},
-            thickness=0.5,
-            smooth=Smooth.None));
-
-        connect(idealMixing.portB, switch3Flows.in1) annotation (Line(
-            points={{-71.2444,-10.2857},{-60,-10.2857},{-60,12},{-48.6,12}},
-            color={0,0,0},
-            thickness=0.5,
-            smooth=Smooth.None));
-        connect(switch3Flows.in2, idealMixing1.portB) annotation (Line(
-            points={{-48.6,8},{-56,8},{-56,-36.2857},{-71.2444,-36.2857}},
-            color={0,0,0},
-            thickness=0.5,
-            smooth=Smooth.None));
-        connect(idealMixing2.portB, switch3Flows.in3) annotation (Line(
-            points={{-71.2444,-64.2857},{-52,-64.2857},{-52,4},{-48.6,4}},
-            color={0,0,0},
-            thickness=0.5,
-            smooth=Smooth.None));
-        connect(Bank.portA, compressorWithStop.portA) annotation (Line(
-            points={{-95.7,32},{-87.6,32}},
-            color={0,0,0},
-            thickness=0.5,
-            smooth=Smooth.None));
-        connect(control.pp2, reductionValve.pp2) annotation (Line(
-            points={{25.2,66.3},{25.2,16},{24,16},{24,-47.2}},
-            color={0,0,0},
-            thickness=0.5,
-            smooth=Smooth.None));
-        connect(control.pp1, reductionValve.pp1) annotation (Line(
-            points={{18.8,66.3},{18.8,-47.2},{16,-47.2}},
-            color={0,0,0},
-            thickness=0.5,
-            smooth=Smooth.None));
-        connect(control.pp4, Tank1.pp) annotation (Line(
-            points={{6,67.2},{-62,67.2},{-62,68},{-118,68},{-118,2},{-106,2},{
-                -106,-0.2}},
-            color={0,0,0},
-            thickness=0.5,
-            smooth=Smooth.None));
-
-        connect(control.pp5, Tank2.pp) annotation (Line(
-            points={{6,69.9},{-62,69.9},{-62,70},{-128,70},{-128,-30.2},{-108,
-                -30.2}},
-            color={0,0,0},
-            thickness=0.5,
-            smooth=Smooth.None));
-
-        connect(control.pp6, Tank3.pp) annotation (Line(
-            points={{6,72.9},{-64,72.9},{-64,72},{-132,72},{-132,-58.2},{-106,-58.2}},
-            color={0,0,0},
-            thickness=0.5,
-            smooth=Smooth.None));
-
-        connect(control.pp7, CHSS.pp) annotation (Line(
-            points={{6,75.9},{78,75.9},{78,76},{142.909,76},{142.909,-44.2}},
-            color={0,0,0},
-            thickness=0.5,
-            smooth=Smooth.None));
-        connect(control.pp8, CHSS.pp) annotation (Line(
-            points={{6,78.9},{16,78.9},{16,76},{142.909,76},{142.909,-44.2}},
-            color={0,0,0},
-            thickness=0.5,
-            smooth=Smooth.None));
-        connect(control.pp9, CHSS.pp) annotation (Line(
-            points={{6,82.2},{14,82.2},{14,76},{142.909,76},{142.909,-44.2}},
-            color={0,0,0},
-            thickness=0.5,
-            smooth=Smooth.None));
-        connect(control.pp10, CHSS.pp) annotation (Line(
-            points={{6,86.1},{10,86.1},{10,76},{142.909,76},{142.909,-44.2}},
-            color={0,0,0},
-            thickness=0.5,
-            smooth=Smooth.None));
-        connect(control.pp11, CHSS.pp) annotation (Line(
-            points={{6,89.1},{18,89.1},{18,76},{142.909,76},{142.909,-44.2}},
-            color={0,0,0},
-            thickness=0.5,
-            smooth=Smooth.None));
-        connect(control.pp12, CHSS.pp) annotation (Line(
-            points={{6,92.1},{10,92.1},{10,76},{142.909,76},{142.909,-44.2}},
-            color={0,0,0},
-            thickness=0.5,
-            smooth=Smooth.None));
-        connect(heatExchangerFixedTemperature1.portB, pressureLoss4.portA)
-          annotation (Line(
-            points={{-58,32},{-51.8,32}},
-            color={0,0,0},
-            thickness=0.5,
-            smooth=Smooth.None));
-        connect(heatExchangerFixedTemperature1.portA, compressorWithStop.portB)
-          annotation (Line(
-            points={{-74,32},{-78,32}},
-            color={0,0,0},
-            thickness=0.5,
-            smooth=Smooth.None));
-        connect(averagePressureRampRateNewSystem_MC2_1.pp1, control.pp13) annotation (Line(
-            points={{80,-41.44},{80,95.4},{6,95.4}},
-            color={0,0,0},
-            thickness=0.5,
-            smooth=Smooth.None));
-      algorithm
-        when CHSS.medium.d >= 40.2 then
-         z5:=1;
-         end when;
-
-      equation
-        connect(heatTransferTank.heatFlow, CHSS.heatFlow) annotation (Line(
-            points={{142.6,-59.6},{142.6,-55.5},{142.909,-55.5},{142.909,-51.9}},
-            color={0,0,0},
-            thickness=0.5,
-            smooth=Smooth.None));
-
-        connect(heatTransferTank1.heatFlow, Bank.heatFlow) annotation (Line(
-            points={{-105.4,24.4},{-105.4,25.5},{-106,25.5},{-106,28.1}},
-            color={0,0,0},
-            thickness=0.5,
-            smooth=Smooth.None));
-        connect(heatTransferTank2.heatFlow, Tank1.heatFlow) annotation (Line(
-            points={{-105.4,-13.6},{-105.4,-10.5},{-106,-10.5},{-106,-7.9}},
-            color={0,0,0},
-            thickness=0.5,
-            smooth=Smooth.None));
-        connect(heatTransferTank3.heatFlow, Tank2.heatFlow) annotation (Line(
-            points={{-107.4,-41.6},{-107.4,-41.5},{-108,-41.5},{-108,-37.9}},
-            color={0,0,0},
-            thickness=0.5,
-            smooth=Smooth.None));
-        connect(heatTransferTank4.heatFlow, Tank3.heatFlow) annotation (Line(
-            points={{-105.4,-69.6},{-105.4,-68.5},{-106,-68.5},{-106,-65.9}},
-            color={0,0,0},
-            thickness=0.5,
-            smooth=Smooth.None));
-        connect(pressureLoss3.portA, averagePressureRampRateNewSystem_MC2_1.portB) annotation (Line(
-            points={{92.2,-48},{88,-48},{88,-47.2},{85.2,-47.2}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(pressureLoss3.portB, pressureLoss.portA) annotation (Line(
-            points={{107.4,-48},{112.2,-48}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(FP.pressurePort, averagePressureRampRateNewSystem_MC2_1.pp1)
-          annotation (Line(
-            points={{94.3,30},{94.3,-6},{80,-6},{80,-41.44}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(FP.Station_port, pressureLoss3.MC_port) annotation (Line(points={{103.5,
-                19.2},{103.5,-7.6},{95.8,-7.6},{95.8,-45}},  color={170,255,170}));
-        connect(FP.Vehicle_port, CHSS.MC_port) annotation (Line(points={{124.66,
-                19.2},{124.66,-11.6},{149.636,-11.6},{149.636,-44.2}},
-                                                                color={0,255,0}));
-        connect(pressureLoss3.pp, control.pp3) annotation (Line(
-            points={{104.4,-45},{104.4,-6.5},{37.68,-6.5},{37.68,81}},
-            color={0,0,0},
-            thickness=0.5));
-
-      algorithm
-        assert(Tank3.p<Tank3.pInitial+10100, "Fueling station is back at starting conditions");
-      equation
-        connect(switch4Flows.out1, pressureLoss2.portA) annotation (Line(
-            points={{-18,-50},{-14,-50},{-14,-48},{-9.8,-48}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(switch4Flows.in1, Bank.portA) annotation (Line(
-            points={{-28.6,-46.4},{-28.6,42.8},{-95.7,42.8},{-95.7,32}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(switch4Flows.in2, idealMixing.portC) annotation (Line(
-            points={{-28.6,-48.8},{-49.3,-48.8},{-49.3,-14.5714},{-71.2444,
-                -14.5714}},
-            color={0,0,0},
-            thickness=0.5));
-
-        connect(switch4Flows.in3, idealMixing1.portC) annotation (Line(
-            points={{-28.6,-51.2},{-50.3,-51.2},{-50.3,-40.5714},{-71.2444,
-                -40.5714}},
-            color={0,0,0},
-            thickness=0.5));
-
-        connect(switch4Flows.in4, idealMixing2.portC) annotation (Line(
-            points={{-28.6,-53.6},{-50.3,-53.6},{-50.3,-68.5714},{-71.2444,
-                -68.5714}},
-            color={0,0,0},
-            thickness=0.5));
-
-         annotation (Diagram(coordinateSystem(preserveAspectRatio=false, extent={{-140,
-                  -100},{160,100}})),
-          Icon(coordinateSystem(extent={{-140,-100},{160,100}})),
-          experiment(StopTime=600),
-          __Dymola_experimentSetupOutput);
-      end SystemWithComp;
-
-      model System_test_new_FP
-        import SI = Modelica.SIunits;
-
-      /*********************** Thermodynamic property call ***********************************/
-         replaceable package Medium =
-            HydrogenFuelingStationLibrary.Fluids.Hydrogen
-                                                     annotation (choicesAllMatching=true);
-      Medium.ThermodynamicState medium;
-      /****************** General parameters *******************/
-
-      // Real   T_test=Medium.temperature_ph(p=5.2e+7, h=3485433);
-
-      parameter SI.Density Density_check=Medium.density_pT(p=600e5, T=273-30);
-       inner parameter SI.Temperature  T_amb=FP.T_amb;
-      // inner SI.Temperature   T_cool=HRSinfo.T_cool;
-      inner parameter SI.Pressure  P_amb=101000;
-      inner parameter SI.Pressure P_start=CHSS.pInitial;
-      // inner Real SOC_target;
-      inner SI.Pressure P_end;
-      // inner SI.Pressure P_ref;
-      // inner Real APRR;
-      inner String  TemperatureClass;
-
-      inner SI.SpecificEntropy s_0;
-      inner SI.SpecificEnthalpy h_0;
-      inner SI.SpecificInternalEnergy u_0;
-
-      inner Integer z1;
-      inner Integer z2;
-      inner Integer z3;
-      inner Integer z4;
-      inner Integer z5=0;
-
-      /****************** equations *******************/
-        HydrogenFuelingStationLibrary.Tanks.Tank1 tank1_1(
-          redeclare package Medium =
-              HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-          Adiabatic=true,
-          V=2,
-          pInitial=90000000)
-          annotation (Placement(transformation(extent={{-186,-28},{-164,-20}})));
-        HydrogenFuelingStationLibrary.Tanks.Tank1_MC CHSS(
-          redeclare package Medium =
-              HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-          Adiabatic=false,
-          V=0.129,
-          pInitial=2500000)
-          annotation (Placement(transformation(extent={{90,12},{68,20}})));
-        PressureLosses.AveragePressureRampRateMC
-          averagePressureRampRateNewSystem(
-          redeclare package Medium =
-              HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-          fueling_method=2,
-          APRR2=24900000,
-          pInitial=2500000,
-          TInitial=239.15)
-          annotation (Placement(transformation(extent={{-8,12},{4,22}})));
-        HydrogenFuelingStationLibrary.PressureLosses.ReductionValve reductionValve(
-          redeclare package Medium =
-              HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-          pInitialIn=45000000,
-          pInitialOut=2500000)
-          annotation (Placement(transformation(extent={{-112,12},{-100,20}})));
-        HydrogenFuelingStationLibrary.PressureLosses.PressureLoss pressureLoss(
-          redeclare package Medium =
-              HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-          kp=0.45,
-          Length=25,
-          K_length=22.5,
-          inputChoice="Valve",
-          kv=0.1,
-          pInitial=2500000)
-          annotation (Placement(transformation(extent={{42,12},{58,20}})));
-        HydrogenFuelingStationLibrary.PressureLosses.PressureLoss pressureLoss1(
-          redeclare package Medium =
-              HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-          kv=1,
-          kp=0.45,
-          inputChoice="Tube",
-          Length=25,
-          Roughness=0.000007,
-          K_length=22.5,
-          pInitial=2500000)
-          annotation (Placement(transformation(extent={{-84,12},{-68,20}})));
-        HeatExchangers.HeatExchangerWithRampDown                           heatExchangerFixedTemperature(
-          COP=1,
-          redeclare package Medium =
-              HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-          T_hex_constant=false,
-          T_hex_con=236.15)
-          annotation (Placement(transformation(extent={{-64,8},{-44,20}})));
-        HydrogenFuelingStationLibrary.Tanks.Tank1 tank1_2(
-          redeclare package Medium =
-              HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-          Adiabatic=true,
-          V=3,
-          pInitial=65000000)
-          annotation (Placement(transformation(extent={{-186,8},{-164,16}})));
-        HydrogenFuelingStationLibrary.Tanks.Tank1 tank1_3(
-          redeclare package Medium =
-              HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-          Adiabatic=true,
-          V=4,
-          pInitial=45000000)
-          annotation (Placement(transformation(extent={{-186,40},{-164,48}})));
-        HydrogenFuelingStationLibrary.Switches.WithOutStop.Switch3Flows switch3Flows(control=1)
-          annotation (Placement(transformation(extent={{-138,10},{-126,22}})));
-        HydrogenFuelingStationLibrary.Controls.ControlMultiplebanks control(
-            Switch_pressure=5000000)
-          annotation (Placement(transformation(extent={{-26,68},{2,96}})));
-        HydrogenFuelingStationLibrary.HeatTransfer.HeatTransferTank heatTransferTank(LInner=
-              1.027, h_charging=300)
-          annotation (Placement(transformation(extent={{72,-14},{92,6}})));
-        HydrogenFuelingStationLibrary.PressureLosses.PressureLoss pressureLoss3(
-          redeclare package Medium =
-              HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-          kv=1,
-          kp=0.45,
-          inputChoice="Tube",
-          Length=10,
-          Roughness=0.000007,
-          K_length=15,
-          pInitial=2500000)
-          annotation (Placement(transformation(extent={{-36,12},{-20,20}})));
-        HydrogenFuelingStationLibrary.HeatTransfer.HeatTransferTank heatTransferTank1(Charging=
-              false)
-          annotation (Placement(transformation(extent={{-184,16},{-164,36}})));
-        HydrogenFuelingStationLibrary.HeatTransfer.HeatTransferTank heatTransferTank2(Charging=
-              false)
-          annotation (Placement(transformation(extent={{-184,-18},{-164,2}})));
-        HydrogenFuelingStationLibrary.HeatTransfer.HeatTransferTank heatTransferTank3(Charging=
-              false)
-          annotation (Placement(transformation(extent={{-184,-56},{-164,-36}})));
-        FuelingProcedure.FuelingProtocol          FP(
-          CapacityCategory="B",
-          PressureClass="H70",
-          TemperatureClass="T40",
-          Communication=true,
-          ColdDispenser=true,
-          T_ColdDisp="10",
-          redeclare model FuellingProcedures = FuelingProcedure.BaseClass.APRR,
-          p_initial=5000000)
-          annotation (Placement(transformation(extent={{50,42},{70,62}})));
-
-        PressureLosses.PressureLoss_MC pressureLoss_MC(redeclare package Medium =
-              Fluids.Hydrogen)
-          annotation (Placement(transformation(extent={{14,10},{30,18}})));
-      equation
-
-        control.z1=z1;
-        control.z2=z2;
-        control.z3=z3;
-        control.z4=z4;
-        medium=Medium.setState_pT(P_amb, T_amb);
-
-      s_0=medium.s;
-      h_0=medium.h;
-      u_0=h_0-P_amb*1/medium.d;
-
-      // HRSinfo.P_amb=P_amb;
-        TemperatureClass=FP.TemperatureClass;
-
-      FP.p_end=P_end;
-      // HRSinfo.SOC=SOC_target;
-      // HRSinfo.APRR=APRR;
-      // HRSinfo.P_ref=P_ref;
-
-      /**************** RESULTS *******************************/
-
-      /*************vehicle parameters***************/
-
-      // results.T_chss=CHSS.MC_port.T_chss;
-      // results.p_chss=CHSS.MC_port.p_chss;
-      // results.SOC_level=CHSS.SOC;
-      // results.m_flow/1000=CHSS.portA.m_flow;
-      // results.Mass=CHSS.M;
-      //
-      // /***************** station parameters **********/
-      //
-      // results.p_station/1e6=combined_routines.p_station;
-      // results.T_fuel=combined_routines.T_station;
-      // results.APRR_ramp=averagePressureRampRateNewSystem.portB.p;
-      // results.p_limit_high/1e6=combined_routines.p_limit_high;
-      //
-      // /******************* general MC parameters *******/
-      //
-      // results.p_limit_low/1e6=combined_routines.p_limit_low;
-      // results.p_final/1e6=combined_routines.p_final;
-      //
-      // results.MAT_exp=combined_routines.MAT_exp;
-      // results.MAT_c=combined_routines.MAT_c;
-      // results.MAT_0=combined_routines.MAT_0;
-      // results.MAT_30=combined_routines.MAT_30;
-      //
-      // results.p_target_comm/1e6=combined_routines.p_target_comm;
-      // results.p_target_non_comm/1e6=combined_routines.p_target_non_comm;
-      // results.p_limit_comm/1e6=combined_routines.p_limit_comm;
-      //
-      // results.PRR_per_minute=combined_routines.PRR_dummy;
-      // results.p_ramp/1e6=combined_routines.p_ramp;
-      // results.PRR=combined_routines.PRR;
-      // results.PRR_calc=combined_routines.PRR_calc;
-      // results.PRR_cap=combined_routines.PRR_cap;
-      // results.APRR_used*10=averagePressureRampRateNewSystem.APRR_used;
-      // results.BankPressure=reductionValve.pp1.p;
-      //
-      // results.t_final=combined_routines.t_final;
-      // results.t_final_large=combined_routines.t_final_large;
-      // results.t_final_small=combined_routines.t_final_small;
-      //
-      //  results.ED_pressureLoss=pressureLoss.E_D;
-      //  results.ED_pressureLoss1=pressureLoss1.E_D;
-      //  results.ED_pressureLoss2=pressureLoss2.E_D;
-      //  results.ED_pressureLoss3=pressureLoss3.E_D;
-      //  results.ED_tank1_1=tank1_1.E_D;
-      //  results.ED_tank1_2=tank1_2.E_D;
-      //  results.ED_tank1_3=tank1_3.E_D;
-      //  results.ED_CHSS=CHSS.E_D;
-      //  results.ED_HEX=heatExchangerFixedTemperature.E_D;
-      //  results.ED_reductionValve=reductionValve.E_D;
-
-        connect(pressureLoss1.portA, reductionValve.portB) annotation (Line(
-            points={{-83.8,16},{-100,16}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(heatExchangerFixedTemperature.portA, pressureLoss1.portB) annotation (
-           Line(
-            points={{-62,16},{-62,16},{-68.6,16}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(switch3Flows.in1, tank1_3.portA) annotation (Line(
-            points={{-136.6,20},{-136,20},{-136,44},{-165.7,44}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(switch3Flows.in3, tank1_1.portA) annotation (Line(
-            points={{-136.6,12},{-136,12},{-136,-24},{-165.7,-24}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(switch3Flows.out1, reductionValve.portA) annotation (Line(
-            points={{-126,16},{-112,16}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(control.pp4, tank1_3.pp) annotation (Line(
-            points={{-26,69.12},{-176,69.12},{-176,47.8}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(control.pp5, tank1_2.pp) annotation (Line(
-            points={{-26,71.64},{-192,71.64},{-192,15.8},{-176,15.8}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(control.pp6, tank1_1.pp) annotation (Line(
-            points={{-26,74.44},{-196,74.44},{-196,-20.2},{-176,-20.2}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(control.pp1, reductionValve.pp1) annotation (Line(
-            points={{-14.8,68.28},{-16,68.28},{-16,60},{-110,60},{-110,18.8}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(control.pp2, reductionValve.pp2) annotation (Line(
-            points={{-9.2,68.28},{-10,68.28},{-10,44},{-102,44},{-102,18.8}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(control.pp3, CHSS.pp) annotation (Line(
-            points={{1.72,82},{54,82},{54,70},{80,70},{80,19.8}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(control.pp8, CHSS.pp) annotation (Line(
-            points={{-26,80.04},{54,80.04},{54,70},{80,70},{80,19.8}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(control.pp9, CHSS.pp) annotation (Line(
-            points={{-26,83.12},{54,83.12},{54,70},{80,70},{80,19.8}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(control.pp10, CHSS.pp) annotation (Line(
-            points={{-26,86.76},{54,86.76},{54,70},{80,70},{80,19.8}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(control.pp11, CHSS.pp) annotation (Line(
-            points={{-26,89.56},{54,89.56},{54,70},{80,70},{80,19.8}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(control.pp12, CHSS.pp) annotation (Line(
-            points={{-26,92.36},{54,92.36},{54,70},{80,70},{80,19.8}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(control.pp13, CHSS.pp) annotation (Line(
-            points={{-26,95.44},{54,95.44},{54,70},{80,70},{80,19.8}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(control.pp7, CHSS.pp) annotation (Line(
-            points={{-26,77.24},{54,77.24},{54,70},{80,70},{80,19.8}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(heatTransferTank.heatFlow, CHSS.heatFlow) annotation (Line(
-            points={{80.6,4.4},{80.6,6.2},{80,6.2},{80,12.1}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(pressureLoss3.portB, averagePressureRampRateNewSystem.portA)
-          annotation (Line(
-            points={{-20.6,16},{-7,16}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(pressureLoss3.portA, heatExchangerFixedTemperature.portB)
-          annotation (Line(
-            points={{-35.8,16},{-35.8,16},{-46,16}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(tank1_3.heatFlow, heatTransferTank1.heatFlow) annotation (Line(
-            points={{-176,40.1},{-176,40.1},{-176,34.4},{-175.4,34.4}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(tank1_2.heatFlow, heatTransferTank2.heatFlow) annotation (Line(
-            points={{-176,8.1},{-176,0.4},{-175.4,0.4}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(tank1_1.heatFlow, heatTransferTank3.heatFlow) annotation (Line(
-            points={{-176,-27.9},{-176,-37.6},{-175.4,-37.6}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(pressureLoss.portB, CHSS.portA) annotation (Line(
-            points={{57.4,16},{69.7,16}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(tank1_2.portA, switch3Flows.in2) annotation (Line(
-            points={{-165.7,12},{-150,12},{-150,16},{-136.6,16}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(FP.pressurePort, averagePressureRampRateNewSystem.pp1)
-          annotation (Line(
-            points={{51,52},{-1.4,52},{-1.4,20.8},{-2,20.8}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(averagePressureRampRateNewSystem.portB, pressureLoss_MC.portA)
-          annotation (Line(
-            points={{3.2,16},{8,16},{8,14},{14.2,14}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(pressureLoss_MC.portB, pressureLoss.portA) annotation (Line(
-            points={{29.4,14},{36,14},{36,16},{42.2,16}},
-            color={0,0,0},
-            thickness=0.5));
-        connect(FP.Station_port, pressureLoss_MC.MC_port) annotation (Line(
-              points={{55,46.6},{17.8,46.6},{17.8,17}}, color={170,255,170}));
-        connect(FP.Vehicle_port, CHSS.MC_port) annotation (Line(points={{64.2,
-                46.6},{64.2,34.3},{87.4,34.3},{87.4,19.8}}, color={0,255,0}));
-          annotation (Diagram(coordinateSystem(preserveAspectRatio=false, extent={{-200,
-                  -60},{100,100}})),  Icon(coordinateSystem(extent={{-200,-60},{
-                  100,100}})));
-      end System_test_new_FP;
-    end MC_Models;
 
     package ModelsUsedInPublications
 
@@ -12180,7 +11412,7 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
             COP=1,
             redeclare package Medium =
                 HydrogenFuellingStationLibrary.Fluids.Hydrogen,
-            T_hex=233.15)
+            T_hex=223.15)
             annotation (Placement(transformation(extent={{-42,8},{-22,20}})));
           PressureLosses.PressureLoss pressureLoss(
             inputChoice="Valve",
@@ -12195,7 +11427,7 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
           HydrogenFuellingStationLibrary.PressureLosses.AveragePressureRampRate
             averagePressureRampRate(redeclare package Medium =
                 HydrogenFuellingStationLibrary.Fluids.Hydrogen, SAEJ2601=false,
-            APRR2=65000000,
+            APRR2=30000000,
             pInitial=5000000)
             annotation (Placement(transformation(extent={{-18,12},{-6,22}})));
           HydrogenFuellingStationLibrary.HRSInfo HRSinfo
@@ -12304,7 +11536,7 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
             COP=1,
             redeclare package Medium =
                 HydrogenFuellingStationLibrary.Fluids.Hydrogen,
-            T_hex=293.15)
+            T_hex=223.15)
             annotation (Placement(transformation(extent={{-40,8},{-20,20}})));
           HydrogenFuellingStationLibrary.PressureLosses.ReductionValve reductionValve(
               redeclare package Medium =
@@ -12313,7 +11545,7 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
           HydrogenFuellingStationLibrary.PressureLosses.AveragePressureRampRate
             averagePressureRampRate(redeclare package Medium =
                 HydrogenFuellingStationLibrary.Fluids.Hydrogen, SAEJ2601=false,
-            APRR2=35000000,
+            APRR2=60000000,
             pInitial=5000000)
             annotation (Placement(transformation(extent={{-8,12},{4,22}})));
           HydrogenFuellingStationLibrary.HRSInfo HRSinfo
@@ -12480,7 +11712,8 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
         inner String  TemperatureClass;
         inner SI.Pressure P_amb=101000;
         parameter SI.Density Density_check=Medium.density_pT(p=600e5, T=273-30);
-         inner parameter SI.Temperature  T_amb=combined_routines.T_amb;
+          inner parameter SI.Temperature  T_amb=combined_routines.T_amb;
+        //  inner parameter SI.Temperature T_init_chss=CHSS.TInitial;
         // inner SI.Temperature   T_cool=HRSinfo.T_cool;
         // inner SI.Pressure  P_amb;
         inner parameter SI.Pressure P_start=CHSS.pInitial;
@@ -12513,24 +11746,24 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
           HydrogenFuelingStationLibrary.Tanks.Tank1_MC CHSS(
             redeclare package Medium =
                 HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-            Adiabatic=false,
             V=0.129,
+            Adiabatic=false,
             pInitial=5000000)
             annotation (Placement(transformation(extent={{90,12},{68,20}})));
           PressureLosses.AveragePressureRampRateMC
             averagePressureRampRateNewSystem(
             redeclare package Medium =
                 HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-            fueling_method=2,
+            pInitial=P_start,
+            fueling_method=1,
             APRR2=24900000,
-            pInitial=5000000,
-            TInitial=239.15)
+            TInitial=245.15)
             annotation (Placement(transformation(extent={{-8,12},{4,22}})));
           HydrogenFuelingStationLibrary.PressureLosses.ReductionValve reductionValve(
             redeclare package Medium =
                 HydrogenFuelingStationLibrary.Fluids.Hydrogen,
             pInitialIn=45000000,
-            pInitialOut=5000000)
+            pInitialOut=P_start)
             annotation (Placement(transformation(extent={{-112,12},{-100,20}})));
           HydrogenFuelingStationLibrary.PressureLosses.PressureLoss pressureLoss(
             redeclare package Medium =
@@ -12540,7 +11773,7 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
             K_length=22.5,
             inputChoice="Valve",
             kv=0.1,
-            pInitial=5000000)
+            pInitial=P_start)
             annotation (Placement(transformation(extent={{42,12},{58,20}})));
           HydrogenFuelingStationLibrary.PressureLosses.PressureLoss pressureLoss1(
             redeclare package Medium =
@@ -12551,7 +11784,7 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
             Length=25,
             Roughness=0.000007,
             K_length=22.5,
-            pInitial=5000000)
+            pInitial=P_start)
             annotation (Placement(transformation(extent={{-84,12},{-68,20}})));
           HydrogenFuelingStationLibrary.PressureLosses.PressureLoss_MC pressureLoss2(
             redeclare package Medium =
@@ -12561,25 +11794,27 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
             K_length=15.5,
             inputChoice="Filter and Mass flow meter",
             kp=0.025,
-            pInitial=5000000)
+            pInitial=P_start,
+            TInitial=245.15)
             annotation (Placement(transformation(extent={{14,12},{30,20}})));
           FuelingProcedure.FuelingProtocol                                    combined_routines(
-            CapacityCategory="A",
-            TemperatureClass="T40",
             PressureClass="H70",
+            T_ColdDisp="10",
+            CapacityCategory="B",
+            p_initial=P_start,
             Communication=true,
-            T_amb=298.15,
-            p_initial=5000000,
-            redeclare model FuellingProcedures =
-                FuelingProcedure.BaseClass.APRR)
+            ColdDispenser=false,
+            TemperatureClass="T30",
+            redeclare model FuellingProcedures = FuelingProcedure.BaseClass.MC,
+            T_amb=293.15)
             annotation (Placement(transformation(extent={{46,38},{92,78}})));
 
           HeatExchangers.HeatExchangerWithRampDown                           heatExchangerFixedTemperature(
             COP=1,
             redeclare package Medium =
                 HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-            T_hex_constant=true,
-            T_hex_con=236.15)
+            T_hex_constant=false,
+            T_hex_con=245.15)
             annotation (Placement(transformation(extent={{-64,8},{-44,20}})));
           HydrogenFuelingStationLibrary.Tanks.Tank1 tank1_2(
             redeclare package Medium =
@@ -12612,7 +11847,8 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
             Length=10,
             Roughness=0.000007,
             K_length=15,
-            pInitial=5000000)
+            pInitial=P_start,
+            TInitial=245.15)
             annotation (Placement(transformation(extent={{-36,12},{-20,20}})));
           HydrogenFuelingStationLibrary.HeatTransfer.HeatTransferTank heatTransferTank1(Charging=
                 false)
@@ -12624,6 +11860,9 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
                 false)
             annotation (Placement(transformation(extent={{-186,-54},{-166,-34}})));
         equation
+        control.Tank1=tank1_3.pInitial;
+        control.Tank2=tank1_2.pInitial;
+        control.Tank3=tank1_1.pInitial;
 
           control.z1=z1;
           control.z2=z2;
@@ -12799,7 +12038,7 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
               color={0,0,0},
               thickness=0.5));
           connect(tank1_3.heatFlow, heatTransferTank1.heatFlow) annotation (Line(
-              points={{-176,40.1},{-176,40.1},{-176,34.4},{-175.4,34.4}},
+              points={{-176,40.1},{-176,34.4},{-175.4,34.4}},
               color={0,0,0},
               thickness=0.5));
           connect(tank1_2.heatFlow, heatTransferTank2.heatFlow) annotation (Line(
@@ -12825,7 +12064,8 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
               thickness=0.5));
             annotation (Diagram(coordinateSystem(preserveAspectRatio=false, extent={{-200,
                     -60},{100,100}})),  Icon(coordinateSystem(extent={{-200,-60},{
-                    100,100}})));
+                    100,100}})),
+            experiment(StopTime=300));
         end FuelingProcess;
 
         model FuelingProcessWithCompressor "Both MC and APRR"
@@ -12839,14 +12079,19 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
                                                        annotation (choicesAllMatching=true);
         Medium.ThermodynamicState medium;
         /****************** General parameters *******************/
-        inner parameter SI.Temperature T_amb=HRSinfo.T_amb;
-        inner SI.Temperature  T_cool=HRSinfo.T_cool;
+        inner parameter SI.Temperature T_amb=FP.T_amb;
+         inner parameter SI.Pressure P_start=CHSS.pInitial;
+
+        inner String  TemperatureClass;
+        // inner SI.Pressure P_amb=101000;
+
+        //  inner SI.Temperature  T_cool=HRSinfo.T_cool;
         inner SI.Pressure  P_amb;
-        inner SI.Pressure P_start;
-        inner Real SOC_target;
+        // inner SI.Pressure P_start;
+        // inner Real SOC_target;
         inner SI.Pressure P_end;
-        inner SI.Pressure P_ref;
-        inner Real APRR;
+        // inner SI.Pressure P_ref;
+        // inner Real APRR;
 
         inner SI.SpecificEntropy s_0;
         inner SI.SpecificEnthalpy h_0;
@@ -12857,8 +12102,6 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
         inner Integer z3;
         inner Integer z4;
         inner Integer z5(start=0, fixed=true);
-          HydrogenFuelingStationLibrary.HRSInfo  HRSinfo(T_amb=298.15, P_start=5000000)
-            annotation (Placement(transformation(extent={{-138,80},{-118,100}})));
         /****************** equations *******************/
           HydrogenFuelingStationLibrary.Tanks.Tank1 Tank1(
             Adiabatic=false,
@@ -12887,31 +12130,24 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
             pInitial=30000000)
             annotation (Placement(transformation(extent={{-116,28},{-94,36}})));
           HydrogenFuelingStationLibrary.Tanks.Tank1_MC CHSS(
-            Adiabatic=false,
             redeclare package Medium =
                 HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-            V=0.14,
+            Adiabatic=true,
+            V=0.129,
             pInitial=5000000) annotation (Placement(transformation(extent={{152,-52},{132,-44}})));
-          HydrogenFuelingStationLibrary.PressureLosses.PressureLoss pressureLoss(
-            redeclare package Medium =
-                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-            inputChoice="Valve",
-            kv=0.1,
-            pInitial=5000000)
-            annotation (Placement(transformation(extent={{112,-44},{128,-52}})));
           HydrogenFuelingStationLibrary.PressureLosses.AveragePressureRampRateMC
             averagePressureRampRateNewSystem_MC2_1(
             redeclare package Medium =
                 HydrogenFuelingStationLibrary.Fluids.Hydrogen,
             fueling_method=2,
-            pInitial=5000000)
+            pInitial=P_start)
             annotation (Placement(transformation(extent={{74,-52},{86,-40}})));
           HydrogenFuelingStationLibrary.PressureLosses.PressureLoss pressureLoss1(
             Length=25,
             K_length=22.5,
             redeclare package Medium =
                 HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-            pInitial=5000000)
+            pInitial=P_start)
             annotation (Placement(transformation(extent={{54,-44},{70,-52}})));
           HydrogenFuelingStationLibrary.PressureLosses.PressureLoss pressureLoss2(
             kv=0.5,
@@ -12922,22 +12158,21 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
                 HydrogenFuelingStationLibrary.Fluids.Hydrogen,
             pInitial=30000000)
             annotation (Placement(transformation(extent={{-10,-44},{6,-52}})));
-          HydrogenFuelingStationLibrary.HeatTransfer.WallPieces.HeatExchangerFixedTemperatureOneWay
+          HydrogenFuelingStationLibrary.HeatExchangers.HeatExchangerWithRampDown
             heatExchangerFixedTemperature(
             COP=1.5,
             redeclare package Medium =
                 HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-            SAEJ2601=false,
-            T_hex=245.15)
+            T_hex_con=235.15)
             annotation (Placement(transformation(extent={{32,-56},{52,-44}})));
           HydrogenFuelingStationLibrary.PressureLosses.ReductionValve reductionValve(
             redeclare package Medium =
                 HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-            pInitialIn=30000000,
-            pInitialOut=5000000)
-            annotation (Placement(transformation(extent={{14,-54},{26,-46}})));
+            pInitialOut=P_start,
+            pInitialIn=30000000)
+            annotation (Placement(transformation(extent={{14,-52},{26,-44}})));
           HydrogenFuelingStationLibrary.Switches.WithOutStop.Switch4Flows switch4Flows(control=1)
-            annotation (Placement(transformation(extent={{-30,-56},{-18,-44}})));
+            annotation (Placement(transformation(extent={{-30,-54},{-18,-42}})));
           HydrogenFuelingStationLibrary.Compressor.CompressorWithStop compressorWithStop(Stop=3,
               redeclare package Medium =
                 HydrogenFuelingStationLibrary.Fluids.Hydrogen)
@@ -12950,39 +12185,36 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
             K_length=22.5,
             redeclare package Medium =
                 HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            inputChoice="Valve",
             pInitial=52000000)
             annotation (Placement(transformation(extent={{-52,36},{-36,28}})));
           HydrogenFuelingStationLibrary.Mixers.VolumeMixer idealMixing(
             fixedInitialPressure=false,
             redeclare package Medium =
                 HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-            pInitial=52000000)
+            pInitial=60000000)
             annotation (Placement(transformation(extent={{-86,-16},{-70,-6}})));
           HydrogenFuelingStationLibrary.Mixers.VolumeMixer idealMixing1(
             fixedInitialPressure=false,
             redeclare package Medium =
                 HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-            pInitial=74000000)
+            pInitial=80000000)
             annotation (Placement(transformation(extent={{-86,-42},{-70,-32}})));
           HydrogenFuelingStationLibrary.Mixers.VolumeMixer idealMixing2(
             fixedInitialPressure=false,
             redeclare package Medium =
                 HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-            pInitial=95000000)
-            annotation (Placement(transformation(extent={{-86,-70},{-70,-60}})));
-          HydrogenFuelingStationLibrary.Controls.ControlMultiplebanks control(
-            z3(fixed=true),
-            Tank1=60000000,
-            Tank2=80000000,
-            Tank3=100000000)
+            pInitial=120000000)
+            annotation (Placement(transformation(extent={{-88,-70},{-72,-60}})));
+          HydrogenFuelingStationLibrary.Controls.ControlMultiplebanks control(z3(fixed=
+                  false))
             annotation (Placement(transformation(extent={{6,66},{38,96}})));
-          HydrogenFuelingStationLibrary.HeatExchangers.HeatExchangerFixedTemperature
-            heatExchangerFixedTemperature1(
-            SAEJ2601=false,
+          HydrogenFuelingStationLibrary.HeatExchangers.HeatExchangerFixedTemperatureSimple
+            heatExchangerFixedTemperatureSimple(
             COP=2,
             redeclare package Medium =
                 HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-            T_hex=245.15)
+            T_hex=T_amb)
             annotation (Placement(transformation(extent={{-76,24},{-56,36}})));
           HydrogenFuelingStationLibrary.HeatTransfer.HeatTransferTank heatTransferTank(
             xCFRP=0.035,
@@ -13023,23 +12255,24 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
             K_length=15.5,
             inputChoice="Filter and Mass flow meter",
             kp=0.025,
-            pInitial=5000000)
+            pInitial=P_start)
             annotation (Placement(transformation(extent={{92,-52},{108,-44}})));
           HydrogenFuelingStationLibrary.FuelingProcedure.FuelingProtocol
                                                      FP(
             CapacityCategory="B",
             PressureClass="H70",
             TemperatureClass="T40",
-            Communication=false,
-            ColdDispenser=true,
             T_ColdDisp="10",
+            ColdDispenser=false,
+            p_initial=P_start,
             redeclare model FuellingProcedures =
-                HydrogenFuelingStationLibrary.FuelingProcedure.BaseClass.MC,
-            redeclare package Medium =
-                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-            p_initial=5000000)
-            annotation (Placement(transformation(extent={{92,10},{138,50}})));
+                HydrogenFuelingStationLibrary.FuelingProcedure.BaseClass.APRR,
+            T_amb=298.15)
+            annotation (Placement(transformation(extent={{92,12},{138,52}})));
         equation
+
+          TemperatureClass=FP.TemperatureClass;
+
           medium=Medium.setState_pT(P_amb, T_amb);
 
           control.z1=z1;
@@ -13047,24 +12280,23 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
           control.z3=z3;
           control.z4=z4;
 
+        control.Tank1=Tank1.pInitial;
+        control.Tank2=Tank2.pInitial;
+        control.Tank3=Tank3.pInitial;
+
         s_0=medium.s;
         h_0=medium.h;
         u_0=h_0-P_amb*1/medium.d;
 
-        HRSinfo.P_amb=P_amb;
-        CHSS.p=P_start;
+        P_amb=101000;
+        // CHSS.p=P_start;
 
         FP.p_end*1e6=P_end;
 
-        HRSinfo.SOC=SOC_target;
-        HRSinfo.APRR=APRR;
-        HRSinfo.P_ref=P_ref;
+        // HRSinfo.SOC=SOC_target;
+        // HRSinfo.APRR=APRR;
+        // HRSinfo.P_ref=P_ref;
 
-          connect(pressureLoss.portB, CHSS.portA) annotation (Line(
-              points={{127.4,-48},{133.545,-48}},
-              color={0,0,0},
-              thickness=0.5,
-              smooth=Smooth.None));
           connect(pressureLoss1.portB, averagePressureRampRateNewSystem_MC2_1.portA) annotation (Line(
               points={{69.4,-48},{74,-48},{74,-47.2},{75,-47.2}},
               color={0,0,0},
@@ -13078,17 +12310,12 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
               smooth=Smooth.None));
           connect(reductionValve.portB, heatExchangerFixedTemperature.portA)
             annotation (Line(
-              points={{26,-50},{30,-50},{30,-48},{34,-48}},
+              points={{26,-48},{34,-48}},
               color={0,0,0},
               thickness=0.5,
               smooth=Smooth.None));
           connect(reductionValve.portA, pressureLoss2.portB) annotation (Line(
-              points={{14,-50},{10,-50},{10,-48},{5.4,-48}},
-              color={0,0,0},
-              thickness=0.5,
-              smooth=Smooth.None));
-          connect(pressureLoss4.portB, switch3Flows.out1) annotation (Line(
-              points={{-36.6,32},{-32,32},{-32,8},{-38,8}},
+              points={{14,-48},{5.4,-48}},
               color={0,0,0},
               thickness=0.5,
               smooth=Smooth.None));
@@ -13107,7 +12334,7 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
               smooth=Smooth.None));
 
           connect(idealMixing2.portA, Tank3.portA) annotation (Line(
-              points={{-84.9333,-64.2857},{-90.3167,-64.2857},{-90.3167,-62},{
+              points={{-86.9333,-64.2857},{-90.3167,-64.2857},{-90.3167,-62},{
                   -95.7,-62}},
               color={0,0,0},
               thickness=0.5,
@@ -13124,7 +12351,7 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
               thickness=0.5,
               smooth=Smooth.None));
           connect(idealMixing2.portB, switch3Flows.in3) annotation (Line(
-              points={{-71.2444,-64.2857},{-52,-64.2857},{-52,4},{-48.6,4}},
+              points={{-73.2444,-64.2857},{-52,-64.2857},{-52,4},{-48.6,4}},
               color={0,0,0},
               thickness=0.5,
               smooth=Smooth.None));
@@ -13134,40 +12361,16 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
               thickness=0.5,
               smooth=Smooth.None));
           connect(control.pp2, reductionValve.pp2) annotation (Line(
-              points={{25.2,66.3},{25.2,16},{24,16},{24,-47.2}},
+              points={{25.2,66.3},{25.2,16},{24,16},{24,-45.2}},
               color={0,0,0},
               thickness=0.5,
               smooth=Smooth.None));
           connect(control.pp1, reductionValve.pp1) annotation (Line(
-              points={{18.8,66.3},{18.8,-47.2},{16,-47.2}},
-              color={0,0,0},
-              thickness=0.5,
-              smooth=Smooth.None));
-          connect(control.pp4, Tank1.pp) annotation (Line(
-              points={{6,67.2},{-62,67.2},{-62,68},{-118,68},{-118,2},{-106,2},{
-                  -106,-0.2}},
+              points={{18.8,66.3},{18.8,-45.2},{16,-45.2}},
               color={0,0,0},
               thickness=0.5,
               smooth=Smooth.None));
 
-          connect(control.pp5, Tank2.pp) annotation (Line(
-              points={{6,69.9},{-62,69.9},{-62,70},{-128,70},{-128,-30.2},{-108,
-                  -30.2}},
-              color={0,0,0},
-              thickness=0.5,
-              smooth=Smooth.None));
-
-          connect(control.pp6, Tank3.pp) annotation (Line(
-              points={{6,72.9},{-64,72.9},{-64,72},{-132,72},{-132,-58.2},{-106,-58.2}},
-              color={0,0,0},
-              thickness=0.5,
-              smooth=Smooth.None));
-
-          connect(control.pp7, CHSS.pp) annotation (Line(
-              points={{6,75.9},{78,75.9},{78,76},{142.909,76},{142.909,-44.2}},
-              color={0,0,0},
-              thickness=0.5,
-              smooth=Smooth.None));
           connect(control.pp8, CHSS.pp) annotation (Line(
               points={{6,78.9},{16,78.9},{16,76},{142.909,76},{142.909,-44.2}},
               color={0,0,0},
@@ -13189,24 +12392,19 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
               thickness=0.5,
               smooth=Smooth.None));
           connect(control.pp12, CHSS.pp) annotation (Line(
-              points={{6,92.1},{10,92.1},{10,76},{142.909,76},{142.909,-44.2}},
+              points={{6,92.1},{12,92.1},{12,76},{142.909,76},{142.909,-44.2}},
               color={0,0,0},
               thickness=0.5,
               smooth=Smooth.None));
-          connect(heatExchangerFixedTemperature1.portB, pressureLoss4.portA)
+          connect(heatExchangerFixedTemperatureSimple.portB, pressureLoss4.portA)
             annotation (Line(
               points={{-58,32},{-51.8,32}},
               color={0,0,0},
               thickness=0.5,
               smooth=Smooth.None));
-          connect(heatExchangerFixedTemperature1.portA, compressorWithStop.portB)
+          connect(heatExchangerFixedTemperatureSimple.portA, compressorWithStop.portB)
             annotation (Line(
               points={{-74,32},{-78,32}},
-              color={0,0,0},
-              thickness=0.5,
-              smooth=Smooth.None));
-          connect(averagePressureRampRateNewSystem_MC2_1.pp1, control.pp13) annotation (Line(
-              points={{80,-41.44},{80,95.4},{6,95.4}},
               color={0,0,0},
               thickness=0.5,
               smooth=Smooth.None));
@@ -13247,19 +12445,15 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
               points={{92.2,-48},{88,-48},{88,-47.2},{85.2,-47.2}},
               color={0,0,0},
               thickness=0.5));
-          connect(pressureLoss3.portB, pressureLoss.portA) annotation (Line(
-              points={{107.4,-48},{112.2,-48}},
-              color={0,0,0},
-              thickness=0.5));
           connect(FP.pressurePort, averagePressureRampRateNewSystem_MC2_1.pp1)
             annotation (Line(
-              points={{94.3,30},{94.3,-6},{80,-6},{80,-41.44}},
+              points={{94.3,32},{80,32},{80,-41.44}},
               color={0,0,0},
               thickness=0.5));
           connect(FP.Station_port, pressureLoss3.MC_port) annotation (Line(points={{103.5,
-                  19.2},{103.5,-7.6},{95.8,-7.6},{95.8,-45}},  color={170,255,170}));
+                  21.2},{103.5,4.4},{95.8,4.4},{95.8,-45}},    color={170,255,170}));
           connect(FP.Vehicle_port, CHSS.MC_port) annotation (Line(points={{124.66,
-                  19.2},{124.66,-11.6},{149.636,-11.6},{149.636,-44.2}},
+                  21.2},{124.66,-11.6},{149.636,-11.6},{149.636,-44.2}},
                                                                   color={0,255,0}));
           connect(pressureLoss3.pp, control.pp3) annotation (Line(
               points={{104.4,-45},{104.4,-6.5},{37.68,-6.5},{37.68,81}},
@@ -13270,31 +12464,61 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
           assert(Tank3.p<Tank3.pInitial+10100, "Fueling station is back at starting conditions");
         equation
           connect(switch4Flows.out1, pressureLoss2.portA) annotation (Line(
-              points={{-18,-50},{-14,-50},{-14,-48},{-9.8,-48}},
+              points={{-18,-48},{-9.8,-48}},
               color={0,0,0},
               thickness=0.5));
           connect(switch4Flows.in1, Bank.portA) annotation (Line(
-              points={{-28.6,-46.4},{-28.6,42.8},{-95.7,42.8},{-95.7,32}},
+              points={{-28.6,-44.4},{-28.6,42.8},{-95.7,42.8},{-95.7,32}},
               color={0,0,0},
               thickness=0.5));
           connect(switch4Flows.in2, idealMixing.portC) annotation (Line(
-              points={{-28.6,-48.8},{-49.3,-48.8},{-49.3,-14.5714},{-71.2444,
+              points={{-28.6,-46.8},{-49.3,-46.8},{-49.3,-14.5714},{-71.2444,
                   -14.5714}},
               color={0,0,0},
               thickness=0.5));
 
           connect(switch4Flows.in3, idealMixing1.portC) annotation (Line(
-              points={{-28.6,-51.2},{-50.3,-51.2},{-50.3,-40.5714},{-71.2444,
+              points={{-28.6,-49.2},{-50.3,-49.2},{-50.3,-40.5714},{-71.2444,
                   -40.5714}},
               color={0,0,0},
               thickness=0.5));
 
           connect(switch4Flows.in4, idealMixing2.portC) annotation (Line(
-              points={{-28.6,-53.6},{-50.3,-53.6},{-50.3,-68.5714},{-71.2444,
+              points={{-28.6,-51.6},{-50.3,-51.6},{-50.3,-68.5714},{-73.2444,
                   -68.5714}},
               color={0,0,0},
               thickness=0.5));
 
+          connect(Tank1.pp, control.pp4) annotation (Line(
+              points={{-106,-0.2},{-118,-0.2},{-118,67.2},{6,67.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(Tank2.pp, control.pp5) annotation (Line(
+              points={{-108,-30.2},{-122,-30.2},{-122,69.9},{6,69.9}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(Tank3.pp, control.pp6) annotation (Line(
+              points={{-106,-58.2},{-130,-58.2},{-130,72.9},{6,72.9}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(control.pp7, CHSS.pp) annotation (Line(
+              points={{6,75.9},{144,75.9},{144,-44.2},{142.909,-44.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(control.pp13, CHSS.pp) annotation (Line(
+              points={{6,95.4},{74,95.4},{74,76},{144,76},{144,-44.2},{142.909,
+                  -44.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(pressureLoss4.portB, switch3Flows.out1) annotation (Line(
+              points={{-36.6,32},{-34,32},{-34,24},{-32,24},{-32,18},{-38,18},{
+                  -38,8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(pressureLoss3.portB, CHSS.portA) annotation (Line(
+              points={{107.4,-48},{133.545,-48}},
+              color={0,0,0},
+              thickness=0.5));
            annotation (Diagram(coordinateSystem(preserveAspectRatio=false, extent={{-140,
                     -100},{160,100}})),
             Icon(coordinateSystem(extent={{-140,-100},{160,100}})),
@@ -13348,7 +12572,7 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
                 HydrogenFuelingStationLibrary.Fluids.Hydrogen,
             Adiabatic=false,
             V=0.129,
-            pInitial=2500000)
+            pInitial=5000000)
             annotation (Placement(transformation(extent={{90,12},{68,20}})));
           PressureLosses.AveragePressureRampRateMC
             averagePressureRampRateNewSystem(
@@ -13356,14 +12580,14 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
                 HydrogenFuelingStationLibrary.Fluids.Hydrogen,
             fueling_method=2,
             APRR2=24900000,
-            pInitial=2500000,
+            pInitial=5000000,
             TInitial=239.15)
             annotation (Placement(transformation(extent={{-8,12},{4,22}})));
           HydrogenFuelingStationLibrary.PressureLosses.ReductionValve reductionValve(
             redeclare package Medium =
                 HydrogenFuelingStationLibrary.Fluids.Hydrogen,
             pInitialIn=45000000,
-            pInitialOut=2500000)
+            pInitialOut=5000000)
             annotation (Placement(transformation(extent={{-112,12},{-100,20}})));
           HydrogenFuelingStationLibrary.PressureLosses.PressureLoss pressureLoss(
             redeclare package Medium =
@@ -13372,19 +12596,20 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
             Length=25,
             K_length=22.5,
             inputChoice="Valve",
-            kv=0.1,
-            pInitial=2500000)
+            kv=0.4,
+            pInitial=5000000,
+            TInitial=239.15)
             annotation (Placement(transformation(extent={{42,12},{58,20}})));
           HydrogenFuelingStationLibrary.PressureLosses.PressureLoss pressureLoss1(
             redeclare package Medium =
                 HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-            kv=1,
             kp=0.45,
-            inputChoice="Tube",
             Length=25,
             Roughness=0.000007,
             K_length=22.5,
-            pInitial=2500000)
+            inputChoice="Valve",
+            kv=0.1,
+            pInitial=5000000)
             annotation (Placement(transformation(extent={{-84,12},{-68,20}})));
           HeatExchangers.HeatExchangerWithRampDown                           heatExchangerFixedTemperature(
             COP=1,
@@ -13418,13 +12643,14 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
           HydrogenFuelingStationLibrary.PressureLosses.PressureLoss pressureLoss3(
             redeclare package Medium =
                 HydrogenFuelingStationLibrary.Fluids.Hydrogen,
-            kv=1,
             kp=0.45,
-            inputChoice="Tube",
             Length=10,
             Roughness=0.000007,
             K_length=15,
-            pInitial=2500000)
+            inputChoice="Valve",
+            kv=0.5,
+            pInitial=5000000,
+            TInitial=239.15)
             annotation (Placement(transformation(extent={{-36,12},{-20,20}})));
           HydrogenFuelingStationLibrary.HeatTransfer.HeatTransferTank heatTransferTank1(Charging=
                 false)
@@ -13440,19 +12666,27 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
             PressureClass="H70",
             TemperatureClass="T40",
             Communication=true,
-            ColdDispenser=true,
             T_ColdDisp="10",
-            redeclare model FuellingProcedures =
-                FuelingProcedure.BaseClass.APRR,
-            p_initial=5000000)
+            ColdDispenser=false,
+            redeclare model FuellingProcedures = FuelingProcedure.BaseClass.MC,
+            p_initial=5000000,
+            SOC_target=99,
+            MAT_exp=239.15,
+            T_station_init(start=239.15),
+            T_station_init_30(start=239.15))
             annotation (Placement(transformation(extent={{50,42},{70,62}})));
 
           PressureLosses.PressureLoss_MC pressureLoss_MC(redeclare package
               Medium =
-                Fluids.Hydrogen)
-            annotation (Placement(transformation(extent={{14,10},{30,18}})));
+                Fluids.Hydrogen,
+            inputChoice="Valve",
+            kv=0.1,
+            TInitial=239.15)
+            annotation (Placement(transformation(extent={{14,12},{30,20}})));
         equation
-
+        control.Tank1=tank1_3.pInitial;
+        control.Tank2=tank1_2.pInitial;
+        control.Tank3=tank1_1.pInitial;
           control.z1=z1;
           control.z2=z2;
           control.z3=z3;
@@ -13639,21 +12873,450 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
               thickness=0.5));
           connect(averagePressureRampRateNewSystem.portB, pressureLoss_MC.portA)
             annotation (Line(
-              points={{3.2,16},{8,16},{8,14},{14.2,14}},
+              points={{3.2,16},{14.2,16}},
               color={0,0,0},
               thickness=0.5));
           connect(pressureLoss_MC.portB, pressureLoss.portA) annotation (Line(
-              points={{29.4,14},{36,14},{36,16},{42.2,16}},
+              points={{29.4,16},{42.2,16}},
               color={0,0,0},
               thickness=0.5));
           connect(FP.Station_port, pressureLoss_MC.MC_port) annotation (Line(
-                points={{55,46.6},{17.8,46.6},{17.8,17}}, color={170,255,170}));
+                points={{55,46.6},{17.8,46.6},{17.8,19}}, color={170,255,170}));
           connect(FP.Vehicle_port, CHSS.MC_port) annotation (Line(points={{64.2,
                   46.6},{64.2,34.3},{87.4,34.3},{87.4,19.8}}, color={0,255,0}));
             annotation (Diagram(coordinateSystem(preserveAspectRatio=false, extent={{-200,
                     -60},{100,100}})),  Icon(coordinateSystem(extent={{-200,-60},{
                     100,100}})));
         end FuelingProcess_backup;
+
+        model CascadeSystemCompressor
+          import SI = Modelica.SIunits;
+
+        /*********************** Thermodynamic property call ***********************************/
+         replaceable package Medium = Fluids.Hydrogen (onePhase=true)
+           constrainedby Modelica.Media.Interfaces.PartialMedium
+                                                       annotation (choicesAllMatching=true);
+        Medium.ThermodynamicState medium;
+        /****************** General parameters *******************/
+        inner parameter SI.Temperature T_amb=HRSinfo.T_amb;
+        inner parameter SI.Pressure P_initial=HSS.pInitial;
+
+        inner SI.Temperature  T_cool=HRSinfo.T_cool;
+        inner SI.Pressure  P_amb;
+        inner SI.Pressure P_start;
+        inner Real SOC_target;
+        inner SI.Pressure P_end;
+        inner SI.Pressure P_ref;
+        inner Real APRR;
+
+        inner SI.SpecificEntropy s_0;
+        inner SI.SpecificEnthalpy h_0;
+        inner SI.SpecificInternalEnergy u_0;
+
+        inner Integer z1;
+        inner Integer z2;
+        inner Integer z3;
+        inner Integer z4;
+        inner Integer z5(start=0);
+
+        Real stoh=3600;
+        inner String  TemperatureClass;
+        // inner SI.Pressure P_amb=101000;
+        HydrogenFuelingStationLibrary.Units.PowerConsumption P( start=0);
+
+          HRSInfo HRSinfo(T_amb=298.15, P_start=5000000)
+            annotation (Placement(transformation(extent={{-138,80},{-118,100}})));
+        /****************** equations *******************/
+          Tanks.Tank1 Tank1(
+            Adiabatic=false,
+            redeclare package Medium = Fluids.Hydrogen,
+            pInitial=45000000)
+            annotation (Placement(transformation(extent={{-116,-8},{-94,0}})));
+          Tanks.Tank1 Tank2(
+            Adiabatic=false,
+            redeclare package Medium = Fluids.Hydrogen,
+            pInitial=65000000)
+            annotation (Placement(transformation(extent={{-118,-38},{-96,-30}})));
+          Tanks.Tank1 Tank3(
+            Adiabatic=false,
+            fixedInitialPressure=true,
+            redeclare package Medium = Fluids.Hydrogen,
+            pInitial=115000000)
+            annotation (Placement(transformation(extent={{-116,-66},{-94,-58}})));
+          Tanks.Tank1 Bank(
+            V=100,
+            Adiabatic=false,
+            redeclare package Medium = Fluids.Hydrogen,
+            pInitial=30000000)
+            annotation (Placement(transformation(extent={{-116,28},{-94,36}})));
+          Tanks.Tank1 HSS(
+            V=0.172,
+            Adiabatic=false,
+            redeclare package Medium = Fluids.Hydrogen,
+            pInitial=2000000)
+            annotation (Placement(transformation(extent={{152,-52},{132,-44}})));
+          PressureLosses.PressureLoss pressureLoss(
+            inputChoice="Valve",
+            kv=0.06,
+            redeclare package Medium = Fluids.Hydrogen,
+            pInitial=P_initial)
+            annotation (Placement(transformation(extent={{108,-52},{124,-44}})));
+          PressureLosses.AveragePressureRampRate averagePressureRampRate(redeclare
+              package Medium = Medium, pInitial=P_initial)
+            annotation (Placement(transformation(extent={{86,-52},{98,-40}})));
+          PressureLosses.PressureLoss pressureLoss1(
+            Length=25,
+            K_length=22.5,
+            redeclare package Medium = Fluids.Hydrogen,
+            pInitial=P_initial)
+            annotation (Placement(transformation(extent={{58,-52},{74,-44}})));
+          PressureLosses.PressureLoss pressureLoss2(
+            kv=0.5,
+            inputChoice="Tube",
+            Length=10,
+            K_length=15,
+            redeclare package Medium = Fluids.Hydrogen,
+            pInitial=30000000)
+            annotation (Placement(transformation(extent={{-10,-52},{6,-44}})));
+          HeatExchangers.HeatExchangerWithRampDown
+            heatExchangerFixedTemperature(                                   COP=1.5,
+              redeclare package Medium = Fluids.Hydrogen,
+            T_hex_con=233.15)
+            annotation (Placement(transformation(extent={{32,-58},{52,-46}})));
+          PressureLosses.ReductionValve reductionValve(
+            redeclare package Medium = Medium,
+            pInitialIn=30000000,
+            pInitialOut=P_initial)
+            annotation (Placement(transformation(extent={{14,-52},{26,-44}})));
+          Switches.WithOutStop.Switch4Flows switch4Flows(control=1)
+            annotation (Placement(transformation(extent={{-30,-54},{-18,-42}})));
+          Compressor.CompressorWithStop compressorWithStop(Stop=3, redeclare
+              package
+              Medium = Medium)
+            annotation (Placement(transformation(extent={{-90,30},{-76,38}})));
+          Switches.WithStop.Switch3Flows switch3Flows(control=2, control2=2)
+            annotation (Placement(transformation(extent={{-50,0},{-36,16}})));
+          PressureLosses.PressureLoss pressureLoss4(
+            redeclare package Medium = Medium,
+            Length=25,
+            K_length=22.5,
+            pInitial=52000000)
+            annotation (Placement(transformation(extent={{-52,28},{-36,36}})));
+          Mixers.VolumeMixer idealMixing(
+            redeclare package Medium = Medium,
+            fixedInitialPressure=false,
+            pInitial=52000000)
+            annotation (Placement(transformation(extent={{-86,-16},{-70,-6}})));
+          Mixers.VolumeMixer idealMixing1(
+            redeclare package Medium = Medium,
+            fixedInitialPressure=false,
+            pInitial=74000000)
+            annotation (Placement(transformation(extent={{-86,-42},{-70,-32}})));
+          Mixers.VolumeMixer idealMixing2(
+            redeclare package Medium = Medium,
+            fixedInitialPressure=false,
+            pInitial=95000000)
+            annotation (Placement(transformation(extent={{-86,-70},{-70,-60}})));
+          Controls.ControlMultiplebanks control
+            annotation (Placement(transformation(extent={{6,68},{38,98}})));
+          HeatTransfer.WallPieces.HeatExchangerFixedTemperatureOneWay
+            heatExchangerFixedTemperature1(
+            SAEJ2601=false,
+            COP=2,
+            redeclare package Medium = Fluids.Hydrogen,
+            T_hex=293.15)
+            annotation (Placement(transformation(extent={{-76,24},{-56,36}})));
+          HeatTransfer.HeatTransferTank heatTransferTank(
+            xCFRP=0.035,
+            dInner=0.46,
+            xLiner=0.006,
+            h_charging=450)
+            annotation (Placement(transformation(extent={{134,-78},{154,-58}})));
+          HeatTransfer.HeatTransferTank heatTransferTank1(
+            tank=1,
+            Charging=false,
+            xCFRP=0.05,
+            xLiner=0.1,
+            dInner=0.462,
+            LInner=581)
+            annotation (Placement(transformation(extent={{-114,6},{-94,26}})));
+          HeatTransfer.HeatTransferTank heatTransferTank2(
+            dInner=0.46,
+            LInner=5.5,
+            tank=3,
+            xCFRP=0.04)
+            annotation (Placement(transformation(extent={{-114,-32},{-94,-12}})));
+          HeatTransfer.HeatTransferTank heatTransferTank3(
+            dInner=0.046,
+            LInner=5.5,
+            xCFRP=0.04)
+            annotation (Placement(transformation(extent={{-116,-60},{-96,-40}})));
+          HeatTransfer.HeatTransferTank heatTransferTank4(
+            dInner=0.46,
+            LInner=5.5,
+            xCFRP=0.04)
+            annotation (Placement(transformation(extent={{-114,-88},{-94,-68}})));
+          FuelingProcedure.FuelingProtocol fuelingProtocol(
+            CapacityCategory="B",
+            PressureClass="H70",
+            TemperatureClass="T40",
+            p_initial=P_initial,
+            redeclare model FuellingProcedures =
+                FuelingProcedure.BaseClass.APRR)
+            annotation (Placement(transformation(extent={{110,20},{130,40}})));
+        equation
+          medium=Medium.setState_pT(P_amb, T_amb);
+
+          control.z1=z1;
+          control.z2=z2;
+          control.z3=z3;
+          control.z4=z4;
+
+        TemperatureClass=fuelingProtocol.TemperatureClass;
+        fuelingProtocol.p_end=P_end;
+
+        s_0=medium.s;
+        h_0=medium.h;
+        u_0=h_0-P_amb*1/medium.d;
+
+        P=(heatExchangerFixedTemperature.W+heatExchangerFixedTemperature1.W+compressorWithStop.W)/3600/1000;
+
+        control.Tank1=Tank1.pInitial;
+        control.Tank2=Tank2.pInitial;
+        control.Tank3=Tank3.pInitial;
+
+        HRSinfo.P_amb=P_amb;
+        HRSinfo.P_start=P_start;
+        HRSinfo.FP=P_end;
+        HRSinfo.SOC=SOC_target;
+        HRSinfo.APRR=APRR;
+        HRSinfo.P_ref=P_ref;
+
+          connect(averagePressureRampRate.portB, pressureLoss.portA) annotation (Line(
+              points={{97.2,-47.2},{102.6,-47.2},{102.6,-48},{108.2,-48}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(pressureLoss.portB, HSS.portA) annotation (Line(
+              points={{123.4,-48},{133.545,-48}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(pressureLoss1.portB, averagePressureRampRate.portA) annotation (Line(
+              points={{73.4,-48},{80,-48},{80,-47.2},{87,-47.2}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(heatExchangerFixedTemperature.portB, pressureLoss1.portA) annotation (
+             Line(
+              points={{50,-50},{54,-50},{54,-48},{58.2,-48}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(reductionValve.portB, heatExchangerFixedTemperature.portA)
+            annotation (Line(
+              points={{26,-48},{30,-48},{30,-50},{34,-50}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(reductionValve.portA, pressureLoss2.portB) annotation (Line(
+              points={{14,-48},{5.4,-48}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(switch4Flows.out1, pressureLoss2.portA) annotation (Line(
+              points={{-18,-48},{-9.8,-48}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(Bank.portA, switch4Flows.in1) annotation (Line(
+              points={{-95.7,32},{-94,32},{-94,48},{-28.6,48},{-28.6,-44.4}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(pressureLoss4.portB, switch3Flows.out1) annotation (Line(
+              points={{-36.6,32},{-32,32},{-32,8},{-38,8}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(idealMixing.portA, Tank1.portA) annotation (Line(
+              points={{-84.9333,-10.2857},{-90.3167,-10.2857},{-90.3167,-4},{
+                  -95.7,-4}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+
+          connect(idealMixing1.portA, Tank2.portA) annotation (Line(
+              points={{-84.9333,-36.2857},{-90.3167,-36.2857},{-90.3167,-34},{
+                  -97.7,-34}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+
+          connect(idealMixing2.portA, Tank3.portA) annotation (Line(
+              points={{-84.9333,-64.2857},{-90.3167,-64.2857},{-90.3167,-62},{
+                  -95.7,-62}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+
+          connect(idealMixing.portB, switch3Flows.in1) annotation (Line(
+              points={{-71.2444,-10.2857},{-60,-10.2857},{-60,12},{-48.6,12}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(switch3Flows.in2, idealMixing1.portB) annotation (Line(
+              points={{-48.6,8},{-56,8},{-56,-36.2857},{-71.2444,-36.2857}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(idealMixing2.portB, switch3Flows.in3) annotation (Line(
+              points={{-71.2444,-64.2857},{-52,-64.2857},{-52,4},{-48.6,4}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(idealMixing.portC, switch4Flows.in2) annotation (Line(
+              points={{-71.2444,-14.5714},{-48,-14.5714},{-48,-46.8},{-28.6,
+                  -46.8}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(idealMixing1.portC, switch4Flows.in3) annotation (Line(
+              points={{-71.2444,-40.5714},{-56,-40.5714},{-56,-49.2},{-28.6,
+                  -49.2}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(idealMixing2.portC, switch4Flows.in4) annotation (Line(
+              points={{-71.2444,-68.5714},{-46,-68.5714},{-46,-51.6},{-28.6,
+                  -51.6}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(Bank.portA, compressorWithStop.portA) annotation (Line(
+              points={{-95.7,32},{-87.6,32}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(control.pp2, reductionValve.pp2) annotation (Line(
+              points={{25.2,68.3},{25.2,16},{24,16},{24,-45.2}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(control.pp1, reductionValve.pp1) annotation (Line(
+              points={{18.8,68.3},{18.8,-45.2},{16,-45.2}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(control.pp4, Tank1.pp) annotation (Line(
+              points={{6,69.2},{-62,69.2},{-62,68},{-118,68},{-118,2},{-106,2},{-106,-0.2}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+
+          connect(control.pp5, Tank2.pp) annotation (Line(
+              points={{6,71.9},{-62,71.9},{-62,70},{-128,70},{-128,-30.2},{-108,-30.2}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+
+          connect(control.pp6, Tank3.pp) annotation (Line(
+              points={{6,74.9},{-64,74.9},{-64,72},{-132,72},{-132,-58.2},{-106,-58.2}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+
+          connect(HSS.pp, control.pp3) annotation (Line(
+              points={{142.909,-44.2},{142.909,83},{37.68,83}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(control.pp7, HSS.pp) annotation (Line(
+              points={{6,77.9},{78,77.9},{78,76},{142.909,76},{142.909,-44.2}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(control.pp8, HSS.pp) annotation (Line(
+              points={{6,80.9},{16,80.9},{16,76},{142.909,76},{142.909,-44.2}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(control.pp9, HSS.pp) annotation (Line(
+              points={{6,84.2},{14,84.2},{14,76},{142.909,76},{142.909,-44.2}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(control.pp10, HSS.pp) annotation (Line(
+              points={{6,88.1},{10,88.1},{10,76},{142.909,76},{142.909,-44.2}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(control.pp11, HSS.pp) annotation (Line(
+              points={{6,91.1},{18,91.1},{18,76},{142.909,76},{142.909,-44.2}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(control.pp12, HSS.pp) annotation (Line(
+              points={{6,94.1},{10,94.1},{10,76},{142.909,76},{142.909,-44.2}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(heatExchangerFixedTemperature1.portB, pressureLoss4.portA)
+            annotation (Line(
+              points={{-58,32},{-51.8,32}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(heatExchangerFixedTemperature1.portA, compressorWithStop.portB)
+            annotation (Line(
+              points={{-74,32},{-78,32}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(averagePressureRampRate.pp1, control.pp13) annotation (Line(
+              points={{92,-41.44},{92,97.4},{6,97.4}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+        algorithm
+           when HSS.medium.d>=40.2 then
+           z5:=1;
+           end when;
+
+        equation
+          connect(heatTransferTank.heatFlow, HSS.heatFlow) annotation (Line(
+              points={{142.6,-59.6},{142.6,-55.5},{142.909,-55.5},{142.909,
+                  -51.9}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+
+          connect(heatTransferTank1.heatFlow, Bank.heatFlow) annotation (Line(
+              points={{-105.4,24.4},{-105.4,25.5},{-106,25.5},{-106,28.1}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(heatTransferTank2.heatFlow, Tank1.heatFlow) annotation (Line(
+              points={{-105.4,-13.6},{-105.4,-10.5},{-106,-10.5},{-106,-7.9}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(heatTransferTank3.heatFlow, Tank2.heatFlow) annotation (Line(
+              points={{-107.4,-41.6},{-107.4,-41.5},{-108,-41.5},{-108,-37.9}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(heatTransferTank4.heatFlow, Tank3.heatFlow) annotation (Line(
+              points={{-105.4,-69.6},{-105.4,-68.5},{-106,-68.5},{-106,-65.9}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          annotation (Diagram(coordinateSystem(preserveAspectRatio=false, extent={{-140,
+                    -100},{160,100}})),
+            Icon(coordinateSystem(extent={{-140,-100},{160,100}})),
+            experiment(StopTime=600),
+            __Dymola_experimentSetupOutput);
+        end CascadeSystemCompressor;
       end FuelingProtocolComparison;
 
       package PhDAssemination
@@ -13768,7 +13431,7 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
             Adiabatic=true,
             V=1e-12,
             pInitial=30000000)
-            annotation (Placement(transformation(extent={{-12,-16},{10,-8}})));
+            annotation (Placement(transformation(extent={{-10,-4},{4,2}})));
         equation
           medium=Medium.setState_pT(P_amb, T_amb);
 
@@ -13890,12 +13553,12 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
               thickness=0.5,
               smooth=Smooth.None));
           connect(tank2_1.portB, switch2Flows.in2) annotation (Line(
-              points={{8.3,-12},{10,-12},{10,0},{7.4,0}},
+              points={{2.91818,-1},{4,-1},{4,-2},{6,-2},{6,0},{7.4,0}},
               color={0,0,0},
               thickness=0.5,
               smooth=Smooth.None));
           connect(tank2_1.portA, pressureLoss.portB) annotation (Line(
-              points={{-11.3,-12},{-11.3,-11},{-14.6,-11},{-14.6,0}},
+              points={{-9.55455,-1},{-14.6,-1},{-14.6,0}},
               color={0,0,0},
               thickness=0.5,
               smooth=Smooth.None));
@@ -13919,6 +13582,8 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
         Medium.ThermodynamicState medium;
         /****************** General parameters *******************/
         inner parameter SI.Temperature T_amb=HRSinfo.T_amb;
+        inner parameter SI.Pressure P_initial=HSS.pInitial;
+
         inner SI.Temperature  T_cool=HRSinfo.T_cool;
         inner SI.Pressure  P_amb;
         inner SI.Pressure P_start;
@@ -13936,24 +13601,30 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
         inner Integer z3;
         inner Integer z4;
         inner Integer z5(start=0);
+
+        Real stoh=3600;
+
+        HydrogenFuelingStationLibrary.Units.PowerConsumption P( start=0);
+
+
           HRSInfo HRSinfo
             annotation (Placement(transformation(extent={{-138,80},{-118,100}})));
         /****************** equations *******************/
           Tanks.Tank1 Tank1(
             Adiabatic=false,
             redeclare package Medium = Fluids.Hydrogen,
-            pInitial=60000000)
+            pInitial=45000000)
             annotation (Placement(transformation(extent={{-116,-8},{-94,0}})));
           Tanks.Tank1 Tank2(
             Adiabatic=false,
             redeclare package Medium = Fluids.Hydrogen,
-            pInitial=80000000)
+            pInitial=65000000)
             annotation (Placement(transformation(extent={{-118,-38},{-96,-30}})));
           Tanks.Tank1 Tank3(
             Adiabatic=false,
             fixedInitialPressure=true,
             redeclare package Medium = Fluids.Hydrogen,
-            pInitial=100000000)
+            pInitial=115000000)
             annotation (Placement(transformation(extent={{-116,-66},{-94,-58}})));
           Tanks.Tank1 Bank(
             V=100,
@@ -13971,16 +13642,16 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
             inputChoice="Valve",
             kv=0.06,
             redeclare package Medium = Fluids.Hydrogen,
-            pInitial=2000000)
+            pInitial=P_initial)
             annotation (Placement(transformation(extent={{108,-52},{124,-44}})));
           PressureLosses.AveragePressureRampRate averagePressureRampRate(redeclare
-              package Medium = Medium, pInitial=2000000)
+              package Medium = Medium, pInitial=P_initial)
             annotation (Placement(transformation(extent={{86,-52},{98,-40}})));
           PressureLosses.PressureLoss pressureLoss1(
             Length=25,
             K_length=22.5,
             redeclare package Medium = Fluids.Hydrogen,
-            pInitial=200000000000)
+            pInitial=P_initial)
             annotation (Placement(transformation(extent={{58,-52},{74,-44}})));
           PressureLosses.PressureLoss pressureLoss2(
             kv=0.5,
@@ -13993,11 +13664,11 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
           HeatTransfer.WallPieces.HeatExchangerFixedTemperatureOneWay
             heatExchangerFixedTemperature(                                   COP=1.5,
               redeclare package Medium = Fluids.Hydrogen)
-            annotation (Placement(transformation(extent={{32,-56},{52,-44}})));
+            annotation (Placement(transformation(extent={{32,-58},{52,-46}})));
           PressureLosses.ReductionValve reductionValve(
             redeclare package Medium = Medium,
             pInitialIn=30000000,
-            pInitialOut=2000000)
+            pInitialOut=P_initial)
             annotation (Placement(transformation(extent={{14,-52},{26,-44}})));
           Switches.WithOutStop.Switch4Flows switch4Flows(control=1)
             annotation (Placement(transformation(extent={{-30,-54},{-18,-42}})));
@@ -14028,11 +13699,8 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
             fixedInitialPressure=false,
             pInitial=95000000)
             annotation (Placement(transformation(extent={{-86,-70},{-70,-60}})));
-          Controls.ControlMultiplebanks control(
-            Tank1=60000000,
-            Tank2=80000000,
-            Tank3=100000000)
-            annotation (Placement(transformation(extent={{6,66},{38,96}})));
+          Controls.ControlMultiplebanks control
+            annotation (Placement(transformation(extent={{6,68},{38,98}})));
           HeatTransfer.WallPieces.HeatExchangerFixedTemperatureOneWay
             heatExchangerFixedTemperature1(
             SAEJ2601=false,
@@ -14073,6 +13741,9 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
         equation
           medium=Medium.setState_pT(P_amb, T_amb);
 
+
+
+
           control.z1=z1;
           control.z2=z2;
           control.z3=z3;
@@ -14082,12 +13753,21 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
         h_0=medium.h;
         u_0=h_0-P_amb*1/medium.d;
 
+
+        P=(heatExchangerFixedTemperature.W+heatExchangerFixedTemperature1.W+compressorWithStop.W)/3600/1000;
+
+        control.Tank1=Tank1.pInitial;
+        control.Tank2=Tank2.pInitial;
+        control.Tank3=Tank3.pInitial;
+
         HRSinfo.P_amb=P_amb;
         HRSinfo.P_start=P_start;
         HRSinfo.FP=P_end;
         HRSinfo.SOC=SOC_target;
         HRSinfo.APRR=APRR;
         HRSinfo.P_ref=P_ref;
+
+
 
           connect(averagePressureRampRate.portB, pressureLoss.portA) annotation (Line(
               points={{97.2,-47.2},{102.6,-47.2},{102.6,-48},{108.2,-48}},
@@ -14106,13 +13786,13 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
               smooth=Smooth.None));
           connect(heatExchangerFixedTemperature.portB, pressureLoss1.portA) annotation (
              Line(
-              points={{50,-48},{58.2,-48}},
+              points={{50,-50},{54,-50},{54,-48},{58.2,-48}},
               color={0,0,0},
               thickness=0.5,
               smooth=Smooth.None));
           connect(reductionValve.portB, heatExchangerFixedTemperature.portA)
             annotation (Line(
-              points={{26,-48},{34,-48}},
+              points={{26,-48},{30,-48},{30,-50},{34,-50}},
               color={0,0,0},
               thickness=0.5,
               smooth=Smooth.None));
@@ -14196,67 +13876,65 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
               thickness=0.5,
               smooth=Smooth.None));
           connect(control.pp2, reductionValve.pp2) annotation (Line(
-              points={{25.2,66.3},{25.2,16},{24,16},{24,-45.2}},
+              points={{25.2,68.3},{25.2,16},{24,16},{24,-45.2}},
               color={0,0,0},
               thickness=0.5,
               smooth=Smooth.None));
           connect(control.pp1, reductionValve.pp1) annotation (Line(
-              points={{18.8,66.3},{18.8,-45.2},{16,-45.2}},
+              points={{18.8,68.3},{18.8,-45.2},{16,-45.2}},
               color={0,0,0},
               thickness=0.5,
               smooth=Smooth.None));
           connect(control.pp4, Tank1.pp) annotation (Line(
-              points={{6,67.2},{-62,67.2},{-62,68},{-118,68},{-118,2},{-106,2},{
-                  -106,-0.2}},
+              points={{6,69.2},{-62,69.2},{-62,68},{-118,68},{-118,2},{-106,2},{-106,-0.2}},
               color={0,0,0},
               thickness=0.5,
               smooth=Smooth.None));
 
           connect(control.pp5, Tank2.pp) annotation (Line(
-              points={{6,69.9},{-62,69.9},{-62,70},{-128,70},{-128,-30.2},{-108,
-                  -30.2}},
+              points={{6,71.9},{-62,71.9},{-62,70},{-128,70},{-128,-30.2},{-108,-30.2}},
               color={0,0,0},
               thickness=0.5,
               smooth=Smooth.None));
 
           connect(control.pp6, Tank3.pp) annotation (Line(
-              points={{6,72.9},{-64,72.9},{-64,72},{-132,72},{-132,-58.2},{-106,-58.2}},
+              points={{6,74.9},{-64,74.9},{-64,72},{-132,72},{-132,-58.2},{-106,-58.2}},
               color={0,0,0},
               thickness=0.5,
               smooth=Smooth.None));
 
           connect(HSS.pp, control.pp3) annotation (Line(
-              points={{142.909,-44.2},{142.909,81},{37.68,81}},
+              points={{142.909,-44.2},{142.909,83},{37.68,83}},
               color={0,0,0},
               thickness=0.5,
               smooth=Smooth.None));
           connect(control.pp7, HSS.pp) annotation (Line(
-              points={{6,75.9},{78,75.9},{78,76},{142.909,76},{142.909,-44.2}},
+              points={{6,77.9},{78,77.9},{78,76},{142.909,76},{142.909,-44.2}},
               color={0,0,0},
               thickness=0.5,
               smooth=Smooth.None));
           connect(control.pp8, HSS.pp) annotation (Line(
-              points={{6,78.9},{16,78.9},{16,76},{142.909,76},{142.909,-44.2}},
+              points={{6,80.9},{16,80.9},{16,76},{142.909,76},{142.909,-44.2}},
               color={0,0,0},
               thickness=0.5,
               smooth=Smooth.None));
           connect(control.pp9, HSS.pp) annotation (Line(
-              points={{6,82.2},{14,82.2},{14,76},{142.909,76},{142.909,-44.2}},
+              points={{6,84.2},{14,84.2},{14,76},{142.909,76},{142.909,-44.2}},
               color={0,0,0},
               thickness=0.5,
               smooth=Smooth.None));
           connect(control.pp10, HSS.pp) annotation (Line(
-              points={{6,86.1},{10,86.1},{10,76},{142.909,76},{142.909,-44.2}},
+              points={{6,88.1},{10,88.1},{10,76},{142.909,76},{142.909,-44.2}},
               color={0,0,0},
               thickness=0.5,
               smooth=Smooth.None));
           connect(control.pp11, HSS.pp) annotation (Line(
-              points={{6,89.1},{18,89.1},{18,76},{142.909,76},{142.909,-44.2}},
+              points={{6,91.1},{18,91.1},{18,76},{142.909,76},{142.909,-44.2}},
               color={0,0,0},
               thickness=0.5,
               smooth=Smooth.None));
           connect(control.pp12, HSS.pp) annotation (Line(
-              points={{6,92.1},{10,92.1},{10,76},{142.909,76},{142.909,-44.2}},
+              points={{6,94.1},{10,94.1},{10,76},{142.909,76},{142.909,-44.2}},
               color={0,0,0},
               thickness=0.5,
               smooth=Smooth.None));
@@ -14273,7 +13951,7 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
               thickness=0.5,
               smooth=Smooth.None));
           connect(averagePressureRampRate.pp1, control.pp13) annotation (Line(
-              points={{92,-41.44},{92,95.4},{6,95.4}},
+              points={{92,-41.44},{92,97.4},{6,97.4}},
               color={0,0,0},
               thickness=0.5,
               smooth=Smooth.None));
@@ -14281,6 +13959,8 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
            when HSS.medium.d>=40.2 then
            z5:=1;
            end when;
+
+
 
         equation
           connect(heatTransferTank.heatFlow, HSS.heatFlow) annotation (Line(
@@ -14572,6 +14252,5344 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
                     -100},{200,100}})));
         end NewSystem;
       end PhDAssemination;
+
+      package HighPressEjector
+        "Optimisation of the Fuelling of Hydrogen Vehicles using Cascade Systems and Ejectors"
+        model Ejector_Test
+
+          import SI = Modelica.SIunits;
+
+
+           replaceable package Medium =
+              Fluids.Hydrogen
+           constrainedby Modelica.Media.Interfaces.PartialMedium
+                                                       annotation (choicesAllMatching=true);
+
+        SI.InternalEnergy U;
+        SI.Mass M;
+        SI.Enthalpy H;
+
+        Medium.ThermodynamicState medium;
+        inner SI.SpecificEntropy s_0;
+        inner SI.SpecificEnthalpy h_0;
+        inner SI.SpecificInternalEnergy u_0;
+        inner parameter SI.Temperature   T_amb=HRSinfo.T_amb;
+        // inner parameter SI.Pressure P_amb=101e3;
+        inner parameter SI.Temperature T_cool=-40+273;
+        parameter SI.Pressure p_ending=80e6;
+        inner SI.Pressure  P_amb;
+        inner SI.Pressure P_start;
+        inner Real SOC_target;
+        inner SI.Pressure P_end;
+        inner SI.Pressure P_ref;
+        inner Real APRR;
+
+        inner Integer z3=0;
+        inner Integer z5=0;
+
+        Real SOC;
+
+          HRSInfo                                HRSinfo
+            annotation (Placement(transformation(extent={{68,72},{88,92}})));
+
+          Tanks.Tank1                                tank1_1(redeclare package
+              Medium = Fluids.Hydrogen, pInitial=90000000)
+            annotation (Placement(transformation(extent={{-88,-4},{-66,4}})));
+          Tanks.Tank1 tank1_2(redeclare package
+              Medium = Fluids.Hydrogen, pInitial=
+                30000000)
+            annotation (Placement(transformation(extent={{-88,-28},{-66,-20}})));
+          Tanks.Tank1 CHSS(
+            V=0.15,
+            redeclare package Medium =
+                Fluids.Hydrogen,
+            pInitial=25000000)
+            annotation (Placement(transformation(extent={{70,-18},{48,-10}})));
+
+          Ejectors.Ejector_Original ejector(
+              redeclare package Medium =
+                Fluids.Hydrogen)
+            annotation (Placement(transformation(extent={{-4,-24},{16,-4}})));
+        equation
+          medium=Medium.setState_pT(P_amb, T_amb);
+          s_0=Medium.specificEntropy(medium);
+          h_0=Medium.specificEnthalpy(medium);
+          u_0=h_0-P_amb*1/Medium.density(medium);
+           M=tank1_1.M+CHSS.M;
+           U=tank1_1.U+CHSS.U;
+           H=tank1_1.h*tank1_1.M+CHSS.h*CHSS.M;
+
+           SOC=CHSS.medium.d/40.2;
+
+        HRSinfo.P_amb=P_amb;
+        HRSinfo.P_start=P_start;
+        HRSinfo.FP=P_end;
+        HRSinfo.SOC=SOC_target;
+        HRSinfo.APRR=APRR;
+        HRSinfo.P_ref=P_ref;
+
+         if CHSS.p>=p_ending then
+              terminate("Final pressure reached");
+         end if;
+
+          connect(ejector.car_tank, CHSS.portA) annotation (Line(
+              points={{12,-14},{49.7,-14}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(ejector.hp_tank, tank1_1.portA) annotation (Line(
+              points={{0,-10},{-34,-10},{-34,0},{-67.7,0}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(ejector.lp_tank, tank1_2.portA) annotation (Line(
+              points={{0,-18},{-34,-18},{-34,-24},{-67.7,-24}},
+              color={0,0,0},
+              thickness=0.5));
+
+          annotation (Icon(coordinateSystem(preserveAspectRatio=false)), Diagram(
+                coordinateSystem(preserveAspectRatio=false)));
+        end Ejector_Test;
+
+        model Ejector_Cascade
+
+          import SI = Modelica.SIunits;
+
+
+           replaceable package Medium =
+              Fluids.Hydrogen
+           constrainedby Modelica.Media.Interfaces.PartialMedium
+                                                       annotation (choicesAllMatching=true);
+
+        SI.InternalEnergy U;
+        SI.Mass M;
+        SI.Enthalpy H;
+        Real Ratio;
+
+        Medium.ThermodynamicState medium;
+        inner SI.SpecificEntropy s_0;
+        inner SI.SpecificEnthalpy h_0;
+        inner SI.SpecificInternalEnergy u_0;
+        inner parameter SI.Temperature   T_amb=HRSinfo.T_amb;
+        // inner parameter SI.Pressure P_amb=101e3;
+        inner parameter SI.Temperature T_cool=-40+273;
+        parameter SI.Pressure p_ending=80e6;
+        inner SI.Pressure  P_amb;
+        inner SI.Pressure P_start;
+        inner Real SOC_target;
+        inner SI.Pressure P_end;
+        inner SI.Pressure P_ref;
+        inner Real APRR;
+
+        inner Integer z1=controlMultiplebanks.z1;
+        inner Integer z2=controlMultiplebanks.z2;
+        inner Integer z3=0;
+        inner Integer z4=controlMultiplebanks.z4;
+        inner Integer z5=0;
+
+        Real SOC;
+
+          HRSInfo HRSinfo
+            annotation (Placement(transformation(extent={{68,72},{88,92}})));
+
+          Tanks.Tank1 tank1_1(redeclare package
+              Medium =
+                Fluids.Hydrogen, pInitial=45000000)
+            annotation (Placement(transformation(extent={{-90,16},{-68,24}})));
+          Tanks.Tank1 tank1_2(redeclare package
+              Medium =
+                Fluids.Hydrogen, pInitial=30000000)
+            annotation (Placement(transformation(extent={{-90,36},{-68,44}})));
+          Tanks.Tank1 CHSS(
+            redeclare package Medium =
+                Fluids.Hydrogen,
+            V=0.13,
+            pInitial=25000000)
+            annotation (Placement(transformation(extent={{70,-18},{48,-10}})));
+
+          Ejectors.Ejector_MKI ejector(redeclare package
+                      Medium = Fluids.Hydrogen)
+            annotation (Placement(transformation(extent={{-4,-24},{16,-4}})));
+          Tanks.Tank1 tank1_3(redeclare package
+              Medium =
+                Fluids.Hydrogen, pInitial=65000000)
+            annotation (Placement(transformation(extent={{-90,-4},{-68,4}})));
+          Tanks.Tank1 tank1_4(redeclare package
+              Medium =
+                Fluids.Hydrogen, pInitial=90000000)
+            annotation (Placement(transformation(extent={{-90,-24},{-68,-16}})));
+          Switches.WithStop.Switch4Flows switch4Flows(
+              control=1, control2=1)
+            annotation (Placement(transformation(extent={{-34,-10},{-22,14}})));
+          Mixers.VolumeMixer Mixer(
+              fixedInitialPressure=false, redeclare package Medium =
+                Fluids.Hydrogen)
+            annotation (Placement(transformation(extent={{-56,32},{-40,42}})));
+          Controls.ControlMultiplebanks
+            controlMultiplebanks(
+            Switch_pressure=100000,
+            Tank1=30000000,
+            Tank2=90000000,
+            Tank3=140000000,
+            Tank4=150000000)
+            annotation (Placement(transformation(extent={{24,46},{54,80}})));
+        equation
+          medium=Medium.setState_pT(P_amb, T_amb);
+          s_0=Medium.specificEntropy(medium);
+          h_0=Medium.specificEnthalpy(medium);
+          u_0=h_0-P_amb*1/Medium.density(medium);
+          M=tank1_1.M+CHSS.M;
+          U=tank1_1.U+CHSS.U;
+          H=tank1_1.h*tank1_1.M+CHSS.h*CHSS.M;
+
+          if tank1_2.M_out < 1e-10 then
+          Ratio = 0;
+          else
+          Ratio = 100*tank1_1.M_out/tank1_2.M_out;
+          end if;
+
+          SOC=CHSS.medium.d/40.2;
+
+        HRSinfo.P_amb=P_amb;
+        HRSinfo.P_start=P_start;
+        HRSinfo.FP=P_end;
+        HRSinfo.SOC=SOC_target;
+        HRSinfo.APRR=APRR;
+        HRSinfo.P_ref=P_ref;
+
+         if CHSS.p>=p_ending then
+              terminate("Final pressure reached");
+         end if;
+
+          connect(ejector.car_tank, CHSS.portA) annotation (Line(
+              points={{12,-14},{49.7,-14}},
+              color={0,0,0},
+              thickness=0.5));
+
+          connect(switch4Flows.out1, ejector.hp_tank) annotation (Line(
+              points={{-22,2},{-12,2},{-12,-10},{0,-10}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(Mixer.portA, tank1_2.portA) annotation (Line(
+              points={{-54.9333,37.7143},{-62,37.7143},{-62,40},{-69.7,40}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(Mixer.portC, switch4Flows.in1) annotation (Line(
+              points={{-41.2444,33.4286},{-36,33.4286},{-36,9.2},{-32.6,9.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(Mixer.portB, ejector.lp_tank) annotation (Line(
+              points={{-41.2444,37.7143},{-14,37.7143},{-14,-18},{0,-18}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_1.portA, switch4Flows.in2) annotation (Line(
+              points={{-69.7,20},{-50,20},{-50,4.4},{-32.6,4.4}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_3.portA, switch4Flows.in3) annotation (Line(
+              points={{-69.7,0},{-64,0},{-64,-0.4},{-32.6,-0.4}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_4.portA, switch4Flows.in4) annotation (Line(
+              points={{-69.7,-20},{-52,-20},{-52,-5.2},{-32.6,-5.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp4, tank1_2.pp) annotation (Line(
+              points={{24,47.36},{-30,47.36},{-30,46},{-54,46},{-54,43.8},{-80,
+                  43.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp5, tank1_1.pp) annotation (Line(
+              points={{24,50.42},{-92,50.42},{-92,23.8},{-80,23.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp6, tank1_3.pp) annotation (Line(
+              points={{24,53.82},{-94,53.82},{-94,3.8},{-80,3.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp7, tank1_4.pp) annotation (Line(
+              points={{24,57.22},{-96,57.22},{-96,-16.2},{-80,-16.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp3, CHSS.pp) annotation (Line(
+              points={{53.7,63},{53.7,26.5},{60,26.5},{60,-10.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp3, controlMultiplebanks.pp8) annotation (Line(
+              points={{53.7,63},{38.85,63},{38.85,60.62},{24,60.62}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp3, controlMultiplebanks.pp9) annotation (Line(
+              points={{53.7,63},{38.85,63},{38.85,64.36},{24,64.36}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp3, controlMultiplebanks.pp10) annotation (Line(
+              points={{53.7,63},{38.85,63},{38.85,68.78},{24,68.78}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp3, controlMultiplebanks.pp11) annotation (Line(
+              points={{53.7,63},{39.85,63},{39.85,72.18},{24,72.18}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp3, controlMultiplebanks.pp12) annotation (Line(
+              points={{53.7,63},{38.85,63},{38.85,75.58},{24,75.58}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp3, controlMultiplebanks.pp13) annotation (Line(
+              points={{53.7,63},{38.85,63},{38.85,79.32},{24,79.32}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp1, ejector.pp1) annotation (Line(
+              points={{36,46.34},{36,-6},{4,-6},{4,-10}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(ejector.pp2, controlMultiplebanks.pp2) annotation (Line(
+              points={{10,-10},{42,-10},{42,46.34}},
+              color={0,0,0},
+              thickness=0.5));
+          annotation (Icon(coordinateSystem(preserveAspectRatio=false)), Diagram(
+                coordinateSystem(preserveAspectRatio=false)));
+        end Ejector_Cascade;
+
+        model Ejector_Cascade_Pressure_Losses
+
+          import SI = Modelica.SIunits;
+
+
+           replaceable package Medium =
+              Fluids.Hydrogen
+           constrainedby Modelica.Media.Interfaces.PartialMedium
+                                                       annotation (choicesAllMatching=true);
+
+        SI.InternalEnergy U;
+        SI.Mass M;
+        SI.Enthalpy H;
+
+        Medium.ThermodynamicState medium;
+        inner SI.SpecificEntropy s_0;
+        inner SI.SpecificEnthalpy h_0;
+        inner SI.SpecificInternalEnergy u_0;
+        inner parameter SI.Temperature   T_amb=HRSinfo.T_amb;
+        // inner parameter SI.Pressure P_amb=101e3;
+        inner parameter SI.Temperature T_cool=-40+273;
+        parameter SI.Pressure p_ending=80e6;
+        inner SI.Pressure  P_amb;
+        inner SI.Pressure P_start;
+        inner Real SOC_target;
+        inner SI.Pressure P_end;
+        inner SI.Pressure P_ref;
+        inner Real APRR;
+
+        inner Integer z1=controlMultiplebanks.z1;
+        inner Integer z2=controlMultiplebanks.z2;
+        inner Integer z3=0;
+        inner Integer z4=controlMultiplebanks.z4;
+        inner Integer z5=0;
+
+        Real SOC;
+
+          HRSInfo HRSinfo
+            annotation (Placement(transformation(extent={{68,72},{88,92}})));
+
+          Tanks.Tank1 tank1_1(redeclare package Medium = Fluids.Hydrogen, pInitial=50000000)
+            annotation (Placement(transformation(extent={{-88,14},{-66,22}})));
+          Tanks.Tank1 tank1_2(redeclare package Medium = Fluids.Hydrogen, pInitial=30000000)
+            annotation (Placement(transformation(extent={{-88,34},{-66,42}})));
+          Tanks.Tank1 CHSS(
+            V=0.15,
+            redeclare package Medium = Fluids.Hydrogen,
+            pInitial=27500000)
+            annotation (Placement(transformation(extent={{92,-20},{70,-12}})));
+
+          Ejectors.Ejector_MKI ejector(redeclare package Medium =
+                Fluids.Hydrogen)
+            annotation (Placement(transformation(extent={{4,-26},{24,-6}})));
+          Tanks.Tank1 tank1_3(redeclare package Medium = Fluids.Hydrogen, pInitial=80000000)
+            annotation (Placement(transformation(extent={{-88,-6},{-66,2}})));
+          Tanks.Tank1 tank1_4(redeclare package Medium = Fluids.Hydrogen, pInitial=100000000)
+            annotation (Placement(transformation(extent={{-88,-26},{-66,-18}})));
+          Switches.WithStop.Switch4Flows switch4Flows(
+              control=1, control2=1)
+            annotation (Placement(transformation(extent={{-36,-10},{-24,14}})));
+          Mixers.VolumeMixer Mixer(
+              fixedInitialPressure=false, redeclare package Medium =
+                Fluids.Hydrogen)
+            annotation (Placement(transformation(extent={{-56,30},{-40,40}})));
+          Controls.ControlMultiplebanks
+            controlMultiplebanks(
+            Switch_pressure=2000000,
+            Tank1=30000000,
+            Tank2=90000000,
+            Tank3=110000000,
+            Tank4=90000000)
+            annotation (Placement(transformation(extent={{30,44},{60,78}})));
+          PressureLosses.PressureLoss pressureLoss(
+            inputChoice="Valve",
+            kv=0.06,
+            redeclare package Medium = Fluids.Hydrogen,
+            pInitial=25000000)
+            annotation (Placement(transformation(extent={{44,-20},{60,-12}})));
+
+          HeatExchangers.HeatExchangerFixedTemperature
+            heatExchangerFixedTemperature(
+            SAEJ2601=false,
+            COP=1,
+            redeclare package Medium = Fluids.Hydrogen,
+            T_hex=233.15)
+            annotation (Placement(transformation(extent={{24,-24},{44,-12}})));
+
+          PressureLosses.PressureLoss
+            pressureLoss1(
+            Length=10,
+            K_length=15,
+            redeclare package Medium = Fluids.Hydrogen,
+            pInitial=30000000)
+            annotation (Placement(transformation(extent={{-18,22},{-2,30}})));
+
+        equation
+          medium=Medium.setState_pT(P_amb, T_amb);
+          s_0=Medium.specificEntropy(medium);
+          h_0=Medium.specificEnthalpy(medium);
+          u_0=h_0-P_amb*1/Medium.density(medium);
+           M=tank1_1.M+CHSS.M;
+           U=tank1_1.U+CHSS.U;
+           H=tank1_1.h*tank1_1.M+CHSS.h*CHSS.M;
+
+           SOC=CHSS.medium.d/40.2;
+
+        HRSinfo.P_amb=P_amb;
+        HRSinfo.P_start=P_start;
+        HRSinfo.FP=P_end;
+        HRSinfo.SOC=SOC_target;
+        HRSinfo.APRR=APRR;
+        HRSinfo.P_ref=P_ref;
+
+         if CHSS.p>=p_ending then
+              terminate("Final pressure reached");
+         end if;
+
+          connect(Mixer.portA, tank1_2.portA) annotation (Line(
+              points={{-54.9333,35.7143},{-60,35.7143},{-60,38},{-67.7,38}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(Mixer.portC, switch4Flows.in1) annotation (Line(
+              points={{-41.2444,31.4286},{-38,31.4286},{-38,9.2},{-34.6,9.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_1.portA, switch4Flows.in2) annotation (Line(
+              points={{-67.7,18},{-48,18},{-48,4.4},{-34.6,4.4}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_3.portA, switch4Flows.in3) annotation (Line(
+              points={{-67.7,-2},{-50,-2},{-50,-0.4},{-34.6,-0.4}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_4.portA, switch4Flows.in4) annotation (Line(
+              points={{-67.7,-22},{-50,-22},{-50,-5.2},{-34.6,-5.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp4, tank1_2.pp) annotation (Line(
+              points={{30,45.36},{-26,45.36},{-26,41.8},{-78,41.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp5, tank1_1.pp) annotation (Line(
+              points={{30,48.42},{-90,48.42},{-90,21.8},{-78,21.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp6, tank1_3.pp) annotation (Line(
+              points={{30,51.82},{-92,51.82},{-92,1.8},{-78,1.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp7, tank1_4.pp) annotation (Line(
+              points={{30,55.22},{-94,55.22},{-94,-18.2},{-78,-18.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp3, CHSS.pp) annotation (Line(
+              points={{59.7,61},{59.7,24.5},{82,24.5},{82,-12.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp3, controlMultiplebanks.pp8) annotation (Line(
+              points={{59.7,61},{38.85,61},{38.85,58.62},{30,58.62}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp3, controlMultiplebanks.pp9) annotation (Line(
+              points={{59.7,61},{38.85,61},{38.85,62.36},{30,62.36}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp3, controlMultiplebanks.pp10) annotation (Line(
+              points={{59.7,61},{38.85,61},{38.85,66.78},{30,66.78}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp3, controlMultiplebanks.pp11) annotation (Line(
+              points={{59.7,61},{39.85,61},{39.85,70.18},{30,70.18}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp3, controlMultiplebanks.pp12) annotation (Line(
+              points={{59.7,61},{38.85,61},{38.85,73.58},{30,73.58}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp3, controlMultiplebanks.pp13) annotation (Line(
+              points={{59.7,61},{38.85,61},{38.85,77.32},{30,77.32}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp1, ejector.pp1) annotation (Line(
+              points={{42,44.34},{42,-8},{12,-8},{12,-12}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(ejector.pp2, controlMultiplebanks.pp2) annotation (Line(
+              points={{18,-12},{48,-12},{48,44.34}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(pressureLoss.portB, CHSS.portA) annotation (Line(
+              points={{59.4,-16},{71.7,-16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(ejector.car_tank, heatExchangerFixedTemperature.portA)
+            annotation (Line(
+              points={{20,-16},{26,-16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(heatExchangerFixedTemperature.portB, pressureLoss.portA)
+            annotation (Line(
+              points={{42,-16},{44.2,-16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(pressureLoss1.portA, Mixer.portB) annotation (Line(
+              points={{-17.8,26},{-34,26},{-34,35.7143},{-41.2444,35.7143}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(pressureLoss1.portB, ejector.lp_tank) annotation (Line(
+              points={{-2.6,26},{2,26},{2,-20},{8,-20}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(switch4Flows.out1, ejector.hp_tank) annotation (Line(
+              points={{-24,2},{-8,2},{-8,-12},{8,-12}},
+              color={0,0,0},
+              thickness=0.5));
+          annotation (Icon(coordinateSystem(preserveAspectRatio=false)), Diagram(
+                coordinateSystem(preserveAspectRatio=false)));
+        end Ejector_Cascade_Pressure_Losses;
+
+        model Ejector_Cascade_Pressure_Losses2
+
+          import SI = Modelica.SIunits;
+
+           replaceable package Medium =
+              Fluids.Hydrogen
+           constrainedby Modelica.Media.Interfaces.PartialMedium
+                                                       annotation (choicesAllMatching=true);
+
+        SI.InternalEnergy U;
+        SI.Mass M;
+        SI.Enthalpy H;
+
+        Medium.ThermodynamicState medium;
+        inner SI.SpecificEntropy s_0;
+        inner SI.SpecificEnthalpy h_0;
+        inner SI.SpecificInternalEnergy u_0;
+        inner parameter SI.Temperature   T_amb=HRSinfo.T_amb;
+        // inner parameter SI.Pressure P_amb=101e3;
+        inner parameter SI.Temperature T_cool=-40+273;
+        parameter SI.Pressure p_ending=80e6;
+        inner SI.Pressure  P_amb;
+        inner SI.Pressure P_start;
+        inner Real SOC_target;
+        inner SI.Pressure P_end;
+        inner SI.Pressure P_ref;
+        inner Real APRR;
+
+        inner Integer z1=controlMultiplebanks.z1;
+        inner Integer z2=controlMultiplebanks.z2;
+        inner Integer z3=0;
+        inner Integer z4=controlMultiplebanks.z4;
+        inner Integer z5=0;
+
+        Real SOC;
+
+          HRSInfo HRSinfo
+            annotation (Placement(transformation(extent={{68,72},{88,92}})));
+
+          Tanks.Tank1 tank1_1(redeclare package
+              Medium = Fluids.Hydrogen, pInitial=
+                90000000)
+            annotation (Placement(transformation(extent={{-88,14},{-66,22}})));
+          Tanks.Tank1 tank1_2(redeclare package
+              Medium = Fluids.Hydrogen, pInitial=
+                30000000)
+            annotation (Placement(transformation(extent={{-88,34},{-66,42}})));
+          Tanks.Tank1 CHSS(
+            redeclare package Medium =
+                Fluids.Hydrogen,
+            V=0.15,
+            pInitial=25000000)
+            annotation (Placement(transformation(extent={{78,-20},{56,-12}})));
+
+          Ejectors.Ejector_MKI ejector(redeclare package
+                      Medium = Fluids.Hydrogen)
+            annotation (Placement(transformation(extent={{-10,-26},{10,-6}})));
+          Tanks.Tank1 tank1_3(redeclare package
+              Medium =
+                Fluids.Hydrogen, pInitial=110000000)
+            annotation (Placement(transformation(extent={{-88,-6},{-66,2}})));
+          Tanks.Tank1 tank1_4(redeclare package
+              Medium =
+                Fluids.Hydrogen, pInitial=110000000)
+            annotation (Placement(transformation(extent={{-88,-26},{-66,-18}})));
+          Switches.WithStop.Switch4Flows switch4Flows(
+              control=1, control2=1)
+            annotation (Placement(transformation(extent={{-34,-24},{-22,0}})));
+          Controls.ControlMultiplebanks
+            controlMultiplebanks(
+            Switch_pressure=2000000,
+            Tank1=30000000,
+            Tank2=90000000,
+            Tank3=110000000,
+            Tank4=110000000)
+            annotation (Placement(transformation(extent={{32,44},{62,78}})));
+          PressureLosses.PressureLoss pressureLoss(
+            redeclare package Medium =
+                Fluids.Hydrogen,
+            inputChoice="Valve",
+            kv=0.06,
+            pInitial=25000000)
+            annotation (Placement(transformation(extent={{30,-20},{46,-12}})));
+
+          HeatExchangers.HeatExchangerFixedTemperature
+            heatExchangerFixedTemperature(
+            redeclare package Medium =
+                Fluids.Hydrogen,
+            SAEJ2601=false,
+            COP=1,
+            T_hex=233.15)
+            annotation (Placement(transformation(extent={{10,-24},{30,-12}})));
+
+          Switches.WithOutStop.Switch3FlowsEjector
+            switch3FlowsEjector(control=1)
+            annotation (Placement(transformation(extent={{-36,12},{-24,24}})));
+        equation
+          medium=Medium.setState_pT(P_amb, T_amb);
+          s_0=Medium.specificEntropy(medium);
+          h_0=Medium.specificEnthalpy(medium);
+          u_0=h_0-P_amb*1/Medium.density(medium);
+           M=tank1_1.M+CHSS.M;
+           U=tank1_1.U+CHSS.U;
+           H=tank1_1.h*tank1_1.M+CHSS.h*CHSS.M;
+
+           SOC=CHSS.medium.d/40.2;
+
+        HRSinfo.P_amb=P_amb;
+        HRSinfo.P_start=P_start;
+        HRSinfo.FP=P_end;
+        HRSinfo.SOC=SOC_target;
+        HRSinfo.APRR=APRR;
+        HRSinfo.P_ref=P_ref;
+
+         if CHSS.p>=p_ending then
+              terminate("Final pressure reached");
+         end if;
+
+          connect(controlMultiplebanks.pp4, tank1_2.pp) annotation (Line(
+              points={{32,45.36},{-26,45.36},{-26,41.8},{-78,41.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp5, tank1_1.pp) annotation (Line(
+              points={{32,48.42},{-90,48.42},{-90,21.8},{-78,21.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp6, tank1_3.pp) annotation (Line(
+              points={{32,51.82},{-92,51.82},{-92,1.8},{-78,1.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp7, tank1_4.pp) annotation (Line(
+              points={{32,55.22},{-94,55.22},{-94,-18.2},{-78,-18.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp3, CHSS.pp) annotation (Line(
+              points={{61.7,61},{61.7,24.5},{68,24.5},{68,-12.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp3, controlMultiplebanks.pp8) annotation (Line(
+              points={{61.7,61},{38.85,61},{38.85,58.62},{32,58.62}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp3, controlMultiplebanks.pp9) annotation (Line(
+              points={{61.7,61},{38.85,61},{38.85,62.36},{32,62.36}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp3, controlMultiplebanks.pp10) annotation (Line(
+              points={{61.7,61},{38.85,61},{38.85,66.78},{32,66.78}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp3, controlMultiplebanks.pp11) annotation (Line(
+              points={{61.7,61},{39.85,61},{39.85,70.18},{32,70.18}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp3, controlMultiplebanks.pp12) annotation (Line(
+              points={{61.7,61},{38.85,61},{38.85,73.58},{32,73.58}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp3, controlMultiplebanks.pp13) annotation (Line(
+              points={{61.7,61},{38.85,61},{38.85,77.32},{32,77.32}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp1, ejector.pp1) annotation (Line(
+              points={{44,44.34},{44,-8},{-2,-8},{-2,-12}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(ejector.pp2, controlMultiplebanks.pp2) annotation (Line(
+              points={{4,-12},{50,-12},{50,44.34}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(pressureLoss.portB, CHSS.portA) annotation (Line(
+              points={{45.4,-16},{57.7,-16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(switch4Flows.out1, ejector.hp_tank) annotation (Line(
+              points={{-22,-12},{-6,-12}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(ejector.car_tank, heatExchangerFixedTemperature.portA)
+            annotation (Line(
+              points={{6,-16},{12,-16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(heatExchangerFixedTemperature.portB, pressureLoss.portA)
+            annotation (Line(
+              points={{28,-16},{30.2,-16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_2.portA, switch4Flows.in1) annotation (Line(
+              points={{-67.7,38},{-50,38},{-50,-4.8},{-32.6,-4.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_1.portA, switch4Flows.in2) annotation (Line(
+              points={{-67.7,18},{-50,18},{-50,-9.6},{-32.6,-9.6}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_3.portA, switch4Flows.in3) annotation (Line(
+              points={{-67.7,-2},{-50,-2},{-50,-14.4},{-32.6,-14.4}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_4.portA, switch4Flows.in4) annotation (Line(
+              points={{-67.7,-22},{-50,-22},{-50,-19.2},{-32.6,-19.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_2.portA, switch3FlowsEjector.in1) annotation (Line(
+              points={{-67.7,38},{-44,38},{-44,22},{-34.6,22}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_1.portA, switch3FlowsEjector.in2) annotation (Line(
+              points={{-67.7,18},{-34.6,18}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_3.portA, switch3FlowsEjector.in3) annotation (Line(
+              points={{-67.7,-2},{-54,-2},{-54,14},{-34.6,14}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(switch3FlowsEjector.out1, ejector.lp_tank) annotation (Line(
+              points={{-24,18},{-18,18},{-18,-20},{-6,-20}},
+              color={0,0,0},
+              thickness=0.5));
+          annotation (Icon(coordinateSystem(preserveAspectRatio=false)), Diagram(
+                coordinateSystem(preserveAspectRatio=false)));
+        end Ejector_Cascade_Pressure_Losses2;
+
+        model Ejector_Cascade_2_tanks_MKI
+
+          import SI = Modelica.SIunits;
+          import HydrogenFuellingStationLibrary;
+
+           replaceable package Medium =
+              Fluids.Hydrogen
+           constrainedby Modelica.Media.Interfaces.PartialMedium
+                                                       annotation (choicesAllMatching=true);
+
+        SI.InternalEnergy U;
+        SI.Mass M;
+        SI.Enthalpy H;
+
+        Medium.ThermodynamicState medium;
+        inner SI.SpecificEntropy s_0;
+        inner SI.SpecificEnthalpy h_0;
+        inner SI.SpecificInternalEnergy u_0;
+        inner parameter SI.Temperature   T_amb=HRSinfo.T_amb;
+        // inner parameter SI.Pressure P_amb=101e3;
+        inner parameter SI.Temperature T_cool=-40+273;
+        parameter SI.Pressure p_ending=80e6;
+        inner SI.Pressure  P_amb;
+        inner SI.Pressure P_start;
+        inner Real SOC_target;
+        inner SI.Pressure P_end;
+        inner SI.Pressure P_ref;
+        inner Real APRR;
+
+          inner Integer z1=controlMultiplebanks_2tanks.z1;
+          inner Integer z2=controlMultiplebanks_2tanks.z2;
+        inner Integer z3=0;
+          inner Integer z4=controlMultiplebanks_2tanks.z4;
+        inner Integer z5=0;
+
+        Real SOC;
+        Real EC;
+
+          HRSInfo HRSinfo
+            annotation (Placement(transformation(extent={{68,72},{88,92}})));
+
+          Tanks.Tank1 CHSS(
+            redeclare package Medium =
+                Fluids.Hydrogen,
+            V=0.13,
+            pInitial=5000000)
+            annotation (Placement(transformation(extent={{76,-20},{54,-12}})));
+
+          Ejectors.Ejector_MKI ejector(
+            redeclare package Medium =
+                Fluids.Hydrogen,
+            AR1=26,
+            AR2=26,
+            AR3=26) annotation (Placement(transformation(extent={{-2,-26},{18,-6}})));
+          Tanks.Tank1 tank1_3(redeclare package
+              Medium = Fluids.Hydrogen, pInitial=60000000)
+            annotation (Placement(transformation(extent={{-56,10},{-34,18}})));
+          Tanks.Tank1 tank1_4(redeclare package
+              Medium = Fluids.Hydrogen, pInitial=90000000)
+            annotation (Placement(transformation(extent={{-56,-16},{-34,-8}})));
+          Controls.ControlMultiplebanks_2tanks
+            controlMultiplebanks_2tanks(
+            Switch_pressure=100000,
+            Tank1=35000000,
+            Tank2=45000000,
+            Tank3=65000000,
+            Tank4=90000000)
+            annotation (Placement(transformation(extent={{-6,32},{24,66}})));
+
+          HeatExchangers.HeatExchangerFixedTemperature
+            heatExchangerFixedTemperature(
+            redeclare package Medium =
+                Fluids.Hydrogen,
+            COP=1,
+            SAEJ2601=true,
+            T_hex=273.15)
+            annotation (Placement(transformation(extent={{28,-24},{48,-12}})));
+        equation
+          medium=Medium.setState_pT(P_amb, T_amb);
+          s_0=Medium.specificEntropy(medium);
+          h_0=Medium.specificEnthalpy(medium);
+          u_0=h_0-P_amb*1/Medium.density(medium);
+          M=tank1_3.M+CHSS.M;
+          U=tank1_3.U+CHSS.U;
+          H=tank1_3.h*tank1_3.M+CHSS.h*CHSS.M;
+
+          SOC=CHSS.medium.d/40.2;
+          EC = 0.1213*tank1_3.M_out + 0.0026 + 0.7271*tank1_4.M_out + 0.0225;
+
+        HRSinfo.P_amb=P_amb;
+        HRSinfo.P_start=P_start;
+        HRSinfo.FP=P_end;
+        HRSinfo.SOC=SOC_target;
+        HRSinfo.APRR=APRR;
+        HRSinfo.P_ref=P_ref;
+
+         if CHSS.p>=p_ending then
+              terminate("Final pressure reached");
+         end if;
+
+          connect(controlMultiplebanks_2tanks.pp6, tank1_3.pp) annotation (Line(
+              points={{-6,39.82},{-46,39.82},{-46,17.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp7, tank1_4.pp) annotation (Line(
+              points={{-6,43.22},{-60,43.22},{-60,-8.2},{-46,-8.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp3, CHSS.pp) annotation (Line(
+              points={{23.7,49},{23.7,24.5},{66,24.5},{66,-12.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp3,controlMultiplebanks_2tanks. pp8)
+            annotation (Line(
+              points={{23.7,49},{38.85,49},{38.85,46.62},{-6,46.62}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp3,controlMultiplebanks_2tanks. pp9)
+            annotation (Line(
+              points={{23.7,49},{38.85,49},{38.85,50.36},{-6,50.36}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp3,controlMultiplebanks_2tanks. pp10)
+            annotation (Line(
+              points={{23.7,49},{32.85,49},{32.85,54.78},{-6,54.78}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp3,controlMultiplebanks_2tanks. pp11)
+            annotation (Line(
+              points={{23.7,49},{35.85,49},{35.85,58.18},{-6,58.18}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp3,controlMultiplebanks_2tanks. pp12)
+            annotation (Line(
+              points={{23.7,49},{28.85,49},{28.85,61.58},{-6,61.58}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp3,controlMultiplebanks_2tanks. pp13)
+            annotation (Line(
+              points={{23.7,49},{22.85,49},{22.85,65.32},{-6,65.32}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp1, ejector.pp1) annotation (Line(
+              points={{6,32.34},{6,-12}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(ejector.pp2,controlMultiplebanks_2tanks. pp2) annotation (Line(
+              points={{12,-12},{12,32.34}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_4.portA, ejector.hp_tank) annotation (Line(
+              points={{-35.7,-12},{2,-12}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(ejector.car_tank, heatExchangerFixedTemperature.portA)
+            annotation (Line(
+              points={{14,-16},{30,-16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(heatExchangerFixedTemperature.portB, CHSS.portA) annotation (
+              Line(
+              points={{46,-16},{55.7,-16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_3.portA, ejector.lp_tank) annotation (Line(
+              points={{-35.7,14},{-32,14},{-32,-20},{2,-20}},
+              color={0,0,0},
+              thickness=0.5));
+          annotation (Icon(coordinateSystem(preserveAspectRatio=false)), Diagram(
+                coordinateSystem(preserveAspectRatio=false)));
+        end Ejector_Cascade_2_tanks_MKI;
+
+        model Ejector_Cascade_3_tanks_MKI
+
+          import SI = Modelica.SIunits;
+
+           replaceable package Medium =
+              Fluids.Hydrogen
+           constrainedby Modelica.Media.Interfaces.PartialMedium
+                                                       annotation (choicesAllMatching=true);
+
+        SI.InternalEnergy U;
+        SI.Mass M;
+        SI.Enthalpy H;
+
+        Medium.ThermodynamicState medium;
+        inner SI.SpecificEntropy s_0;
+        inner SI.SpecificEnthalpy h_0;
+        inner SI.SpecificInternalEnergy u_0;
+        inner parameter SI.Temperature   T_amb=HRSinfo.T_amb;
+        // inner parameter SI.Pressure P_amb=101e3;
+        inner parameter SI.Temperature T_cool=-40+273;
+        parameter SI.Pressure p_ending=80e6;
+        inner SI.Pressure  P_amb;
+        inner SI.Pressure P_start;
+        inner Real SOC_target;
+        inner SI.Pressure P_end;
+        inner SI.Pressure P_ref;
+        inner Real APRR;
+
+          inner Integer z1=controlMultiplebanks_3tanks.z1;
+          inner Integer z2=controlMultiplebanks_3tanks.z2;
+        inner Integer z3=0;
+          inner Integer z4=controlMultiplebanks_3tanks.z4;
+        inner Integer z5=0;
+
+        Real SOC;
+        Real EC;
+
+          HRSInfo HRSinfo
+            annotation (Placement(transformation(extent={{68,72},{88,92}})));
+
+          Tanks.Tank1 tank1_1(redeclare package
+              Medium = Fluids.Hydrogen, pInitial=
+                30000000)
+            annotation (Placement(transformation(extent={{-88,28},{-66,36}})));
+          Tanks.Tank1 CHSS(
+            redeclare package Medium =
+                Fluids.Hydrogen,
+            V=0.13,
+            pInitial=5000000)
+            annotation (Placement(transformation(extent={{76,-20},{54,-12}})));
+
+          Ejectors.Ejector_MKI ejector(
+            redeclare package Medium =
+                Fluids.Hydrogen,
+            AR2=14,
+            AR1=26)
+            annotation (Placement(transformation(extent={{-4,-26},{16,-6}})));
+          Tanks.Tank1 tank1_3(redeclare package
+              Medium = Fluids.Hydrogen, pInitial=65000000)
+            annotation (Placement(transformation(extent={{-88,2},{-66,10}})));
+          Tanks.Tank1 tank1_4(redeclare package
+              Medium = Fluids.Hydrogen, pInitial=90000000)
+            annotation (Placement(transformation(extent={{-88,-26},{-66,-18}})));
+          Controls.ControlMultiplebanks_3tanks
+            controlMultiplebanks_3tanks(
+            Switch_pressure=100000,
+            Tank1=35000000,
+            Tank2=45000000,
+            Tank3=65000000,
+            Tank4=90000000)
+            annotation (Placement(transformation(extent={{32,44},{62,78}})));
+
+          HeatExchangers.HeatExchangerFixedTemperature
+            heatExchangerFixedTemperature(
+            redeclare package Medium =
+                Fluids.Hydrogen,
+            COP=1,
+            SAEJ2601=true,
+            T_hex=273.15)
+            annotation (Placement(transformation(extent={{28,-24},{48,-12}})));
+          Switches.WithOutStop.Switch2Flows switch2Flows
+            annotation (Placement(transformation(extent={{-42,4},{-30,16}})));
+        equation
+          medium=Medium.setState_pT(P_amb, T_amb);
+          s_0=Medium.specificEntropy(medium);
+          h_0=Medium.specificEnthalpy(medium);
+          u_0=h_0-P_amb*1/Medium.density(medium);
+           M=tank1_1.M+CHSS.M;
+           U=tank1_1.U+CHSS.U;
+           H=tank1_1.h*tank1_1.M+CHSS.h*CHSS.M;
+
+           SOC=CHSS.medium.d/40.2;
+           EC = 0.1213*tank1_1.M_out + 0.0026 + 0.5455*tank1_3.M_out + 0.0027 + 0.7271*tank1_4.M_out + 0.0225;
+
+        HRSinfo.P_amb=P_amb;
+        HRSinfo.P_start=P_start;
+        HRSinfo.FP=P_end;
+        HRSinfo.SOC=SOC_target;
+        HRSinfo.APRR=APRR;
+        HRSinfo.P_ref=P_ref;
+
+         if CHSS.p>=p_ending then
+              terminate("Final pressure reached");
+         end if;
+
+          connect(controlMultiplebanks_3tanks.pp5, tank1_1.pp) annotation (Line(
+              points={{32,48.42},{-90,48.42},{-90,35.8},{-78,35.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_3tanks.pp6, tank1_3.pp) annotation (Line(
+              points={{32,51.82},{-92,51.82},{-92,9.8},{-78,9.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_3tanks.pp7, tank1_4.pp) annotation (Line(
+              points={{32,55.22},{-94,55.22},{-94,-18.2},{-78,-18.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_3tanks.pp3, CHSS.pp) annotation (Line(
+              points={{61.7,61},{61.7,24.5},{66,24.5},{66,-12.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_3tanks.pp3, controlMultiplebanks_3tanks.pp8)
+            annotation (Line(
+              points={{61.7,61},{38.85,61},{38.85,58.62},{32,58.62}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_3tanks.pp3, controlMultiplebanks_3tanks.pp9)
+            annotation (Line(
+              points={{61.7,61},{38.85,61},{38.85,62.36},{32,62.36}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_3tanks.pp3, controlMultiplebanks_3tanks.pp10)
+            annotation (Line(
+              points={{61.7,61},{38.85,61},{38.85,66.78},{32,66.78}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_3tanks.pp3, controlMultiplebanks_3tanks.pp11)
+            annotation (Line(
+              points={{61.7,61},{39.85,61},{39.85,70.18},{32,70.18}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_3tanks.pp3, controlMultiplebanks_3tanks.pp12)
+            annotation (Line(
+              points={{61.7,61},{38.85,61},{38.85,73.58},{32,73.58}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_3tanks.pp3, controlMultiplebanks_3tanks.pp13)
+            annotation (Line(
+              points={{61.7,61},{38.85,61},{38.85,77.32},{32,77.32}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_3tanks.pp1, ejector.pp1) annotation (Line(
+              points={{44,44.34},{44,26},{4,26},{4,-12}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(ejector.pp2, controlMultiplebanks_3tanks.pp2) annotation (Line(
+              points={{10,-12},{10,22},{50,22},{50,44.34}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_4.portA, ejector.hp_tank) annotation (Line(
+              points={{-67.7,-22},{-36,-22},{-36,-12},{0,-12}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(ejector.car_tank, heatExchangerFixedTemperature.portA)
+            annotation (Line(
+              points={{12,-16},{30,-16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(heatExchangerFixedTemperature.portB, CHSS.portA) annotation (
+              Line(
+              points={{46,-16},{55.7,-16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_1.portA, switch2Flows.in1) annotation (Line(
+              points={{-67.7,32},{-52,32},{-52,14},{-40.6,14}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_3.portA, switch2Flows.in2) annotation (Line(
+              points={{-67.7,6},{-40.6,6}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(switch2Flows.out1, ejector.lp_tank) annotation (Line(
+              points={{-30,10},{-16,10},{-16,-20},{0,-20}},
+              color={0,0,0},
+              thickness=0.5));
+          annotation (Icon(coordinateSystem(preserveAspectRatio=false)), Diagram(
+                coordinateSystem(preserveAspectRatio=false)));
+        end Ejector_Cascade_3_tanks_MKI;
+
+        model Ejector_Cascade_4_tanks_MKI
+
+          import SI = Modelica.SIunits;
+
+           replaceable package Medium =
+              Fluids.Hydrogen
+           constrainedby Modelica.Media.Interfaces.PartialMedium
+                                                       annotation (choicesAllMatching=true);
+
+        SI.InternalEnergy U;
+        SI.Mass M;
+        SI.Enthalpy H;
+
+        Medium.ThermodynamicState medium;
+        inner SI.SpecificEntropy s_0;
+        inner SI.SpecificEnthalpy h_0;
+        inner SI.SpecificInternalEnergy u_0;
+        inner parameter SI.Temperature   T_amb=HRSinfo.T_amb;
+        // inner parameter SI.Pressure P_amb=101e3;
+        inner parameter SI.Temperature T_cool=-40+273;
+        parameter SI.Pressure p_ending=80e6;
+        inner SI.Pressure  P_amb;
+        inner SI.Pressure P_start;
+        inner Real SOC_target;
+        inner SI.Pressure P_end;
+        inner SI.Pressure P_ref;
+        inner Real APRR;
+
+        inner Integer z1=controlMultiplebanks.z1;
+        inner Integer z2=controlMultiplebanks.z2;
+        inner Integer z3=0;
+        inner Integer z4=controlMultiplebanks.z4;
+        inner Integer z5=0;
+
+        Real SOC;
+        Real EC;
+
+          HRSInfo HRSinfo
+            annotation (Placement(transformation(extent={{80,80},{100,100}})));
+
+          Tanks.Tank1 tank1_1(redeclare package
+              Medium = Fluids.Hydrogen, pInitial=
+                45000000)
+            annotation (Placement(transformation(extent={{-88,14},{-66,22}})));
+          Tanks.Tank1 tank1_2(redeclare package
+              Medium = Fluids.Hydrogen, pInitial=
+                30000000)
+            annotation (Placement(transformation(extent={{-88,34},{-66,42}})));
+          Tanks.Tank1 CHSS(
+            redeclare package Medium =
+                Fluids.Hydrogen,
+            V=0.13,
+            pInitial=5000000)
+            annotation (Placement(transformation(extent={{78,-20},{56,-12}})));
+
+          Ejectors.Ejector_MKI ejector(
+            redeclare package Medium =
+                Fluids.Hydrogen,
+            AR1=26,
+            AR2=18,
+            AR3=14)
+            annotation (Placement(transformation(extent={{-4,-26},{16,-6}})));
+          Tanks.Tank1 tank1_3(redeclare package
+              Medium = Fluids.Hydrogen, pInitial=
+                65000000)
+            annotation (Placement(transformation(extent={{-88,-6},{-66,2}})));
+          Tanks.Tank1 tank1_4(redeclare package
+              Medium = Fluids.Hydrogen, pInitial=
+                90000000)
+            annotation (Placement(transformation(extent={{-88,-26},{-66,-18}})));
+          Controls.ControlMultiplebanks
+            controlMultiplebanks(
+            Switch_pressure=100000,
+            Tank1=35000000,
+            Tank2=45000000,
+            Tank3=65000000,
+            Tank4=90000000)
+            annotation (Placement(transformation(extent={{32,44},{62,78}})));
+
+          Switches.WithOutStop.Switch3Flows
+            switch3Flows(control=1)
+            annotation (Placement(transformation(extent={{-32,12},{-20,24}})));
+          HeatExchangers.HeatExchangerFixedTemperature
+            heatExchangerFixedTemperature(
+            SAEJ2601=false,
+            redeclare package Medium =
+                Fluids.Hydrogen,
+            COP=1,
+            T_hex=233.15)
+            annotation (Placement(transformation(extent={{28,-24},{48,-12}})));
+        equation
+          medium=Medium.setState_pT(P_amb, T_amb);
+          s_0=Medium.specificEntropy(medium);
+          h_0=Medium.specificEnthalpy(medium);
+          u_0=h_0-P_amb*1/Medium.density(medium);
+           M=tank1_1.M+CHSS.M;
+           U=tank1_1.U+CHSS.U;
+           H=tank1_1.h*tank1_1.M+CHSS.h*CHSS.M;
+
+           SOC=CHSS.medium.d/40.2;
+           EC = 0.1213*tank1_2.M_out + 0.0026 + 0.3425*tank1_1.M_out + 0.0024 + 0.5455*tank1_3.M_out + 0.0027 + 0.7271*tank1_4.M_out + 0.0225;
+
+        HRSinfo.P_amb=P_amb;
+        HRSinfo.P_start=P_start;
+        HRSinfo.FP=P_end;
+        HRSinfo.SOC=SOC_target;
+        HRSinfo.APRR=APRR;
+        HRSinfo.P_ref=P_ref;
+
+         if CHSS.p>=p_ending then
+              terminate("Final pressure reached");
+         end if;
+
+          connect(controlMultiplebanks.pp4, tank1_2.pp) annotation (Line(
+              points={{32,45.36},{-26,45.36},{-26,41.8},{-78,41.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp5, tank1_1.pp) annotation (Line(
+              points={{32,48.42},{-90,48.42},{-90,21.8},{-78,21.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp6, tank1_3.pp) annotation (Line(
+              points={{32,51.82},{-92,51.82},{-92,1.8},{-78,1.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp7, tank1_4.pp) annotation (Line(
+              points={{32,55.22},{-94,55.22},{-94,-18.2},{-78,-18.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp3, CHSS.pp) annotation (Line(
+              points={{61.7,61},{61.7,24.5},{68,24.5},{68,-12.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp3, controlMultiplebanks.pp8) annotation (Line(
+              points={{61.7,61},{38.85,61},{38.85,58.62},{32,58.62}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp3, controlMultiplebanks.pp9) annotation (Line(
+              points={{61.7,61},{38.85,61},{38.85,62.36},{32,62.36}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp3, controlMultiplebanks.pp10) annotation (Line(
+              points={{61.7,61},{38.85,61},{38.85,66.78},{32,66.78}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp3, controlMultiplebanks.pp11) annotation (Line(
+              points={{61.7,61},{39.85,61},{39.85,70.18},{32,70.18}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp3, controlMultiplebanks.pp12) annotation (Line(
+              points={{61.7,61},{38.85,61},{38.85,73.58},{32,73.58}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp3, controlMultiplebanks.pp13) annotation (Line(
+              points={{61.7,61},{50,61},{50,62},{40,62},{40,77.32},{32,77.32}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp1, ejector.pp1) annotation (Line(
+              points={{44,44.34},{44,26},{4,26},{4,-12}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(ejector.pp2, controlMultiplebanks.pp2) annotation (Line(
+              points={{10,-12},{10,22},{50,22},{50,44.34}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_4.portA, ejector.hp_tank) annotation (Line(
+              points={{-67.7,-22},{-36,-22},{-36,-12},{0,-12}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_2.portA, switch3Flows.in1) annotation (Line(
+              points={{-67.7,38},{-46,38},{-46,22},{-30.6,22}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_1.portA, switch3Flows.in2) annotation (Line(
+              points={{-67.7,18},{-30.6,18}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_3.portA, switch3Flows.in3) annotation (Line(
+              points={{-67.7,-2},{-40,-2},{-40,14},{-30.6,14}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(switch3Flows.out1, ejector.lp_tank) annotation (Line(
+              points={{-20,18},{-10,18},{-10,-20},{0,-20}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(ejector.car_tank, heatExchangerFixedTemperature.portA)
+            annotation (Line(
+              points={{12,-16},{30,-16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(heatExchangerFixedTemperature.portB, CHSS.portA) annotation (
+              Line(
+              points={{46,-16},{57.7,-16}},
+              color={0,0,0},
+              thickness=0.5));
+          annotation (Icon(coordinateSystem(preserveAspectRatio=false)), Diagram(
+                coordinateSystem(preserveAspectRatio=false)));
+        end Ejector_Cascade_4_tanks_MKI;
+
+        model Ejector_Cascade_2_tanks_MKII
+
+          import SI = Modelica.SIunits;
+
+           replaceable package Medium =
+              Fluids.Hydrogen
+           constrainedby Modelica.Media.Interfaces.PartialMedium
+                                                       annotation (choicesAllMatching=true);
+
+        SI.InternalEnergy U;
+        SI.Mass M;
+        SI.Enthalpy H;
+
+        Medium.ThermodynamicState medium;
+        inner SI.SpecificEntropy s_0;
+        inner SI.SpecificEnthalpy h_0;
+        inner SI.SpecificInternalEnergy u_0;
+        inner parameter SI.Temperature   T_amb=HRSinfo.T_amb;
+        // inner parameter SI.Pressure P_amb=101e3;
+        inner parameter SI.Temperature T_cool=-40+273;
+        parameter SI.Pressure p_ending=80e6;
+        inner SI.Pressure  P_amb;
+        inner SI.Pressure P_start;
+        inner Real SOC_target;
+        inner SI.Pressure P_end;
+        inner SI.Pressure P_ref;
+        inner Real APRR;
+
+          inner Integer z1=controlMultiplebanks_3tanks.z1;
+          inner Integer z2=controlMultiplebanks_3tanks.z2;
+        inner Integer z3=0;
+          inner Integer z4=controlMultiplebanks_3tanks.z4;
+        inner Integer z5=0;
+
+        Real SOC;
+        Real EC;
+
+          HRSInfo HRSinfo
+            annotation (Placement(transformation(extent={{68,72},{88,92}})));
+
+          Tanks.Tank1 tank1_1(redeclare package
+              Medium =
+                Fluids.Hydrogen, pInitial=30000000)
+            annotation (Placement(transformation(extent={{-90,36},{-68,44}})));
+          Tanks.Tank1 CHSS(
+            redeclare package Medium =
+                Fluids.Hydrogen,
+            V=0.13,
+            pInitial=5000000)
+            annotation (Placement(transformation(extent={{92,-24},{70,-16}})));
+
+          Ejectors.Ejector_MKII ejector(                              redeclare
+              package Medium =
+                       Fluids.Hydrogen,
+            AR1=7.5,
+            AR2=7.5,
+            AR3=7.5)
+            annotation (Placement(transformation(extent={{28,-30},{48,-10}})));
+          Tanks.Tank1 tank1_3(redeclare package
+              Medium =
+                Fluids.Hydrogen, pInitial=90000000)
+            annotation (Placement(transformation(extent={{-90,-24},{-68,-16}})));
+          Tanks.Tank1 tank1_4(redeclare package
+              Medium =
+                Fluids.Hydrogen, pInitial=90000000)
+            annotation (Placement(transformation(extent={{-90,-64},{-68,-56}})));
+          Controls.ControlMultiplebanks_3tanks
+            controlMultiplebanks_3tanks(
+            Switch_pressure=100000,
+            Tank1=30000000,
+            Tank2=90000000,
+            Tank3=140000000,
+            Tank4=150000000)
+            annotation (Placement(transformation(extent={{24,46},{54,80}})));
+          Mixers.VolumeMixer Mixer1(
+              fixedInitialPressure=false, redeclare package Medium =
+                Fluids.Hydrogen)
+            annotation (Placement(transformation(extent={{-64,34},{-48,44}})));
+          Switches.WithOutStop.Switch3FlowsEjector
+            switch3FlowsEjector
+            annotation (Placement(transformation(extent={{-6,-46},{6,-34}})));
+          Mixers.VolumeMixer Mixer3(
+              fixedInitialPressure=false, redeclare package Medium =
+                Fluids.Hydrogen)
+            annotation (Placement(transformation(extent={{-66,-26},{-50,-16}})));
+          HeatExchangers.HeatExchangerFixedTemperature
+            heatExchangerFixedTemperature(
+            redeclare package Medium =
+                Fluids.Hydrogen,
+            COP=1,
+            SAEJ2601=true)
+            annotation (Placement(transformation(extent={{48,-28},{68,-16}})));
+          Switches.WithOutStop.Switch3Flows
+            switch3FlowsEjector1
+            annotation (Placement(transformation(extent={{-8,-8},{4,4}})));
+          Mixers.VolumeMixer Mixer2(fixedInitialPressure=
+               false, redeclare package Medium =
+                Fluids.Hydrogen)
+            annotation (Placement(transformation(extent={{-56,-66},{-40,-56}})));
+        equation
+          medium=Medium.setState_pT(P_amb, T_amb);
+          s_0=Medium.specificEntropy(medium);
+          h_0=Medium.specificEnthalpy(medium);
+          u_0=h_0-P_amb*1/Medium.density(medium);
+          M=tank1_1.M+CHSS.M;
+          U=tank1_1.U+CHSS.U;
+          H=tank1_1.h*tank1_1.M+CHSS.h*CHSS.M;
+
+          SOC=CHSS.medium.d/40.2;
+          //EC = 0.1213*tank1_1.M_out + 0.7271*tank1_3.M_out;
+          EC = (-8.767*1e-17*tank1_1.p^2 + 2.053*1e-8*tank1_1.p - 0.4121)*tank1_1.M_out + (-8.767*1e-17*tank1_3.p^2 + 2.053*1e-8*tank1_3.p - 0.4121)*tank1_3.M_out;
+
+        HRSinfo.P_amb=P_amb;
+        HRSinfo.P_start=P_start;
+        HRSinfo.FP=P_end;
+        HRSinfo.SOC=SOC_target;
+        HRSinfo.APRR=APRR;
+        HRSinfo.P_ref=P_ref;
+
+         if CHSS.p>=p_ending then
+              terminate("Final pressure reached");
+         end if;
+
+          connect(controlMultiplebanks_3tanks.pp5, tank1_1.pp) annotation (Line(
+              points={{24,50.42},{-92,50.42},{-92,43.8},{-80,43.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_3tanks.pp6, tank1_3.pp) annotation (Line(
+              points={{24,53.82},{-94,53.82},{-94,-16.2},{-80,-16.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_3tanks.pp7, tank1_4.pp) annotation (Line(
+              points={{24,57.22},{-96,57.22},{-96,-56.2},{-80,-56.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_3tanks.pp3, CHSS.pp) annotation (Line(
+              points={{53.7,63},{53.7,26.5},{82,26.5},{82,-16.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_3tanks.pp3, controlMultiplebanks_3tanks.pp8)
+            annotation (Line(
+              points={{53.7,63},{38.85,63},{38.85,60.62},{24,60.62}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_3tanks.pp3, controlMultiplebanks_3tanks.pp9)
+            annotation (Line(
+              points={{53.7,63},{38.85,63},{38.85,64.36},{24,64.36}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_3tanks.pp3, controlMultiplebanks_3tanks.pp10)
+            annotation (Line(
+              points={{53.7,63},{38.85,63},{38.85,68.78},{24,68.78}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_3tanks.pp3, controlMultiplebanks_3tanks.pp11)
+            annotation (Line(
+              points={{53.7,63},{39.85,63},{39.85,72.18},{24,72.18}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_3tanks.pp3, controlMultiplebanks_3tanks.pp12)
+            annotation (Line(
+              points={{53.7,63},{38.85,63},{38.85,75.58},{24,75.58}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_3tanks.pp3, controlMultiplebanks_3tanks.pp13)
+            annotation (Line(
+              points={{53.7,63},{38.85,63},{38.85,79.32},{24,79.32}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_3tanks.pp1, ejector.pp1) annotation (Line(
+              points={{36,46.34},{36,-16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(ejector.pp2, controlMultiplebanks_3tanks.pp2) annotation (Line(
+              points={{42,-16},{42,46.34}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_1.portA, Mixer1.portA) annotation (Line(
+              points={{-69.7,40},{-64,40},{-64,39.7143},{-62.9333,39.7143}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(switch3FlowsEjector.out1, ejector.lp_tank) annotation (Line(
+              points={{6,-40},{20,-40},{20,-24},{32,-24}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_3.portA, Mixer3.portA) annotation (Line(
+              points={{-69.7,-20},{-66,-20},{-66,-20.2857},{-64.9333,-20.2857}},
+              color={0,0,0},
+              thickness=0.5));
+
+          connect(heatExchangerFixedTemperature.portB, CHSS.portA) annotation (Line(
+              points={{66,-20},{71.7,-20}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(ejector.car_tank, heatExchangerFixedTemperature.portA) annotation (
+              Line(
+              points={{44,-20},{50,-20}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(Mixer1.portB, switch3FlowsEjector1.in1) annotation (Line(
+              points={{-49.2444,39.7143},{-27.6222,39.7143},{-27.6222,2},{-6.6,
+                  2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(Mixer3.portB, switch3FlowsEjector1.in2) annotation (Line(
+              points={{-51.2444,-20.2857},{-28.6222,-20.2857},{-28.6222,-2},{
+                  -6.6,-2}},
+              color={0,0,0},
+              thickness=0.5));
+
+          connect(switch3FlowsEjector1.out1, ejector.hp_tank) annotation (Line(
+              points={{4,-2},{18,-2},{18,-16},{32,-16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(switch3FlowsEjector.in1, Mixer1.portC) annotation (Line(
+              points={{-4.6,-36},{-36,-36},{-36,35.4286},{-49.2444,35.4286}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(Mixer3.portC, switch3FlowsEjector.in2) annotation (Line(
+              points={{-51.2444,-24.5714},{-27.6222,-24.5714},{-27.6222,-40},{
+                  -4.6,-40}},
+              color={0,0,0},
+              thickness=0.5));
+
+          connect(tank1_4.portA, Mixer2.portA) annotation (Line(
+              points={{-69.7,-60},{-62,-60},{-62,-60.2857},{-54.9333,-60.2857}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(Mixer2.portB, switch3FlowsEjector1.in3) annotation (Line(
+              points={{-41.2444,-60.2857},{-41.2444,-6},{-6.6,-6}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(Mixer2.portC, switch3FlowsEjector.in3) annotation (Line(
+              points={{-41.2444,-64.5714},{-22.6222,-64.5714},{-22.6222,-44},{
+                  -4.6,-44}},
+              color={0,0,0},
+              thickness=0.5));
+
+          annotation (Icon(coordinateSystem(preserveAspectRatio=false)), Diagram(
+                coordinateSystem(preserveAspectRatio=false)));
+        end Ejector_Cascade_2_tanks_MKII;
+
+        model Ejector_Cascade_3_tanks_MKII
+
+          import SI = Modelica.SIunits;
+
+           replaceable package Medium =
+              Fluids.Hydrogen
+           constrainedby Modelica.Media.Interfaces.PartialMedium
+                                                       annotation (choicesAllMatching=true);
+
+        SI.InternalEnergy U;
+        SI.Mass M;
+        SI.Enthalpy H;
+
+        Medium.ThermodynamicState medium;
+        inner SI.SpecificEntropy s_0;
+        inner SI.SpecificEnthalpy h_0;
+        inner SI.SpecificInternalEnergy u_0;
+        inner parameter SI.Temperature   T_amb=HRSinfo.T_amb;
+        // inner parameter SI.Pressure P_amb=101e3;
+        inner parameter SI.Temperature T_cool=-40+273;
+        parameter SI.Pressure p_ending=80e6;
+        inner SI.Pressure  P_amb;
+        inner SI.Pressure P_start;
+        inner Real SOC_target;
+        inner SI.Pressure P_end;
+        inner SI.Pressure P_ref;
+        inner Real APRR;
+
+          inner Integer z1=controlMultiplebanks_3tanks.z1;
+          inner Integer z2=controlMultiplebanks_3tanks.z2;
+        inner Integer z3=0;
+          inner Integer z4=controlMultiplebanks_3tanks.z4;
+        inner Integer z5=0;
+
+        Real SOC;
+        Real EC;
+
+          HRSInfo HRSinfo
+            annotation (Placement(transformation(extent={{68,72},{88,92}})));
+
+          Tanks.Tank1 tank1_1(redeclare package
+              Medium =
+                Fluids.Hydrogen, pInitial=30000000)
+            annotation (Placement(transformation(extent={{-90,10},{-68,18}})));
+          Tanks.Tank1 CHSS(
+            redeclare package Medium =
+                Fluids.Hydrogen,
+            V=0.13,
+            pInitial=5000000)
+            annotation (Placement(transformation(extent={{92,-24},{70,-16}})));
+
+          Ejectors.Ejector_MKII ejector(                              redeclare
+              package Medium =
+                       Fluids.Hydrogen,
+            AR1=8.0205448111189,
+            AR2=10.2430984944373,
+            AR3=10.2430984944373)
+            annotation (Placement(transformation(extent={{28,-30},{48,-10}})));
+          Tanks.Tank1 tank1_3(redeclare package
+              Medium =
+                Fluids.Hydrogen, pInitial=65000000)
+            annotation (Placement(transformation(extent={{-90,-24},{-68,-16}})));
+          Tanks.Tank1 tank1_4(redeclare package
+              Medium =
+                Fluids.Hydrogen, pInitial=90000000)
+            annotation (Placement(transformation(extent={{-90,-64},{-68,-56}})));
+          Controls.ControlMultiplebanks_3tanks
+            controlMultiplebanks_3tanks(
+            Switch_pressure=100000,
+            Tank1=30000000,
+            Tank2=90000000,
+            Tank3=140000000,
+            Tank4=150000000)
+            annotation (Placement(transformation(extent={{24,26},{54,60}})));
+          Mixers.VolumeMixer Mixer1(
+              fixedInitialPressure=false, redeclare package Medium =
+                Fluids.Hydrogen)
+            annotation (Placement(transformation(extent={{-64,8},{-48,18}})));
+          Switches.WithOutStop.Switch3FlowsEjector
+            switch3FlowsEjector
+            annotation (Placement(transformation(extent={{-6,-46},{6,-34}})));
+          Mixers.VolumeMixer Mixer3(
+              fixedInitialPressure=false, redeclare package Medium =
+                Fluids.Hydrogen)
+            annotation (Placement(transformation(extent={{-66,-26},{-50,-16}})));
+          HeatExchangers.HeatExchangerFixedTemperature
+            heatExchangerFixedTemperature(
+            redeclare package Medium =
+                Fluids.Hydrogen,
+            COP=1,
+            SAEJ2601=true)
+            annotation (Placement(transformation(extent={{48,-28},{68,-16}})));
+          Switches.WithOutStop.Switch3Flows
+            switch3FlowsEjector1
+            annotation (Placement(transformation(extent={{-8,-8},{4,4}})));
+          Mixers.VolumeMixer Mixer2(fixedInitialPressure=
+               false, redeclare package Medium =
+                Fluids.Hydrogen)
+            annotation (Placement(transformation(extent={{-60,-66},{-44,-56}})));
+        equation
+          medium=Medium.setState_pT(P_amb, T_amb);
+          s_0=Medium.specificEntropy(medium);
+          h_0=Medium.specificEnthalpy(medium);
+          u_0=h_0-P_amb*1/Medium.density(medium);
+          M=tank1_1.M+CHSS.M;
+          U=tank1_1.U+CHSS.U;
+          H=tank1_1.h*tank1_1.M+CHSS.h*CHSS.M;
+
+          SOC=CHSS.medium.d/40.2;
+          EC = 0.1213*tank1_1.M_out + 0.0026 + 0.5455*tank1_3.M_out + 0.0027 + 0.7271*tank1_4.M_out + 0.0225;
+
+        HRSinfo.P_amb=P_amb;
+        HRSinfo.P_start=P_start;
+        HRSinfo.FP=P_end;
+        HRSinfo.SOC=SOC_target;
+        HRSinfo.APRR=APRR;
+        HRSinfo.P_ref=P_ref;
+
+         if CHSS.p>=p_ending then
+              terminate("Final pressure reached");
+         end if;
+
+          connect(controlMultiplebanks_3tanks.pp5, tank1_1.pp) annotation (Line(
+              points={{24,30.42},{-92,30.42},{-92,17.8},{-80,17.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_3tanks.pp6, tank1_3.pp) annotation (Line(
+              points={{24,33.82},{-94,33.82},{-94,-16.2},{-80,-16.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_3tanks.pp7, tank1_4.pp) annotation (Line(
+              points={{24,37.22},{-96,37.22},{-96,-56.2},{-80,-56.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_3tanks.pp3, CHSS.pp) annotation (Line(
+              points={{53.7,43},{53.7,26.5},{82,26.5},{82,-16.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_3tanks.pp3, controlMultiplebanks_3tanks.pp8)
+            annotation (Line(
+              points={{53.7,43},{38.85,43},{38.85,40.62},{24,40.62}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_3tanks.pp3, controlMultiplebanks_3tanks.pp9)
+            annotation (Line(
+              points={{53.7,43},{38.85,43},{38.85,44.36},{24,44.36}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_3tanks.pp3, controlMultiplebanks_3tanks.pp10)
+            annotation (Line(
+              points={{53.7,43},{38.85,43},{38.85,48.78},{24,48.78}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_3tanks.pp3, controlMultiplebanks_3tanks.pp11)
+            annotation (Line(
+              points={{53.7,43},{39.85,43},{39.85,52.18},{24,52.18}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_3tanks.pp3, controlMultiplebanks_3tanks.pp12)
+            annotation (Line(
+              points={{53.7,43},{38.85,43},{38.85,55.58},{24,55.58}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_3tanks.pp3, controlMultiplebanks_3tanks.pp13)
+            annotation (Line(
+              points={{53.7,43},{38.85,43},{38.85,59.32},{24,59.32}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_3tanks.pp1, ejector.pp1) annotation (Line(
+              points={{36,26.34},{36,-16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(ejector.pp2, controlMultiplebanks_3tanks.pp2) annotation (Line(
+              points={{42,-16},{42,26.34}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_1.portA, Mixer1.portA) annotation (Line(
+              points={{-69.7,14},{-64,14},{-64,13.7143},{-62.9333,13.7143}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(switch3FlowsEjector.out1, ejector.lp_tank) annotation (Line(
+              points={{6,-40},{20,-40},{20,-24},{32,-24}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_3.portA, Mixer3.portA) annotation (Line(
+              points={{-69.7,-20},{-66,-20},{-66,-20.2857},{-64.9333,-20.2857}},
+              color={0,0,0},
+              thickness=0.5));
+
+          connect(heatExchangerFixedTemperature.portB, CHSS.portA) annotation (Line(
+              points={{66,-20},{71.7,-20}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(ejector.car_tank, heatExchangerFixedTemperature.portA) annotation (
+              Line(
+              points={{44,-20},{50,-20}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(Mixer1.portB, switch3FlowsEjector1.in1) annotation (Line(
+              points={{-49.2444,13.7143},{-27.6222,13.7143},{-27.6222,2},{-6.6,
+                  2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(Mixer3.portB, switch3FlowsEjector1.in2) annotation (Line(
+              points={{-51.2444,-20.2857},{-28.6222,-20.2857},{-28.6222,-2},{
+                  -6.6,-2}},
+              color={0,0,0},
+              thickness=0.5));
+
+          connect(switch3FlowsEjector1.out1, ejector.hp_tank) annotation (Line(
+              points={{4,-2},{18,-2},{18,-16},{32,-16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(switch3FlowsEjector.in1, Mixer1.portC) annotation (Line(
+              points={{-4.6,-36},{-36,-36},{-36,9.42857},{-49.2444,9.42857}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(Mixer3.portC, switch3FlowsEjector.in2) annotation (Line(
+              points={{-51.2444,-24.5714},{-27.6222,-24.5714},{-27.6222,-40},{
+                  -4.6,-40}},
+              color={0,0,0},
+              thickness=0.5));
+
+          connect(tank1_4.portA, Mixer2.portA) annotation (Line(
+              points={{-69.7,-60},{-62,-60},{-62,-60.2857},{-58.9333,-60.2857}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(Mixer2.portB, switch3FlowsEjector1.in3) annotation (Line(
+              points={{-45.2444,-60.2857},{-45.2444,-6},{-6.6,-6}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(Mixer2.portC, switch3FlowsEjector.in3) annotation (Line(
+              points={{-45.2444,-64.5714},{-22.6222,-64.5714},{-22.6222,-44},{
+                  -4.6,-44}},
+              color={0,0,0},
+              thickness=0.5));
+
+          annotation (Icon(coordinateSystem(preserveAspectRatio=false)), Diagram(
+                coordinateSystem(preserveAspectRatio=false)));
+        end Ejector_Cascade_3_tanks_MKII;
+
+        model Ejector_Cascade_4_tanks_MKII
+
+          import SI = Modelica.SIunits;
+
+           replaceable package Medium =
+              Fluids.Hydrogen
+           constrainedby Modelica.Media.Interfaces.PartialMedium
+                                                       annotation (choicesAllMatching=true);
+
+        SI.InternalEnergy U;
+        SI.Mass M;
+        SI.Enthalpy H;
+        Real Ratio;
+
+        Medium.ThermodynamicState medium;
+        inner SI.SpecificEntropy s_0;
+        inner SI.SpecificEnthalpy h_0;
+        inner SI.SpecificInternalEnergy u_0;
+        inner parameter SI.Temperature   T_amb=HRSinfo.T_amb;
+        // inner parameter SI.Pressure P_amb=101e3;
+        inner parameter SI.Temperature T_cool=-40+273;
+        parameter SI.Pressure p_ending=80e6;
+        inner SI.Pressure  P_amb;
+        inner SI.Pressure P_start;
+        inner Real SOC_target;
+        inner SI.Pressure P_end;
+        inner SI.Pressure P_ref;
+        inner Real APRR;
+
+        inner Integer z1=controlMultiplebanks.z1;
+        inner Integer z2=controlMultiplebanks.z2;
+        inner Integer z3=0;
+        inner Integer z4=controlMultiplebanks.z4;
+        inner Integer z5=0;
+
+        Real SOC;
+        Real EC;
+
+          HRSInfo HRSinfo
+            annotation (Placement(transformation(extent={{68,72},{88,92}})));
+
+          Tanks.Tank1 tank1_1(redeclare package
+              Medium =
+                Fluids.Hydrogen, pInitial=45000000)
+            annotation (Placement(transformation(extent={{-90,-4},{-68,4}})));
+          Tanks.Tank1 tank1_2(redeclare package
+              Medium =
+                Fluids.Hydrogen, pInitial=30000000)
+            annotation (Placement(transformation(extent={{-90,36},{-68,44}})));
+          Tanks.Tank1 CHSS(
+            redeclare package Medium =
+                Fluids.Hydrogen,
+            V=0.13,
+            pInitial=5000000)
+            annotation (Placement(transformation(extent={{92,-24},{70,-16}})));
+
+          Ejectors.Ejector_MKII ejector(                              redeclare
+              package Medium =
+                       Fluids.Hydrogen,
+            AR1=9.98064420803779,
+            AR2=17.6942789598108,
+            AR3=11.4305555555555)
+            annotation (Placement(transformation(extent={{28,-30},{48,-10}})));
+          Tanks.Tank1 tank1_3(redeclare package
+              Medium =
+                Fluids.Hydrogen, pInitial=65000000)
+            annotation (Placement(transformation(extent={{-90,-44},{-68,-36}})));
+          Tanks.Tank1 tank1_4(redeclare package
+              Medium =
+                Fluids.Hydrogen, pInitial=90000000)
+            annotation (Placement(transformation(extent={{-90,-84},{-68,-76}})));
+          Controls.ControlMultiplebanks
+            controlMultiplebanks(
+            Switch_pressure=100000,
+            Tank1=30000000,
+            Tank2=90000000,
+            Tank3=140000000,
+            Tank4=150000000)
+            annotation (Placement(transformation(extent={{24,46},{54,80}})));
+          Mixers.VolumeMixer Mixer2(
+              fixedInitialPressure=false, redeclare package Medium =
+                Fluids.Hydrogen)
+            annotation (Placement(transformation(extent={{-62,34},{-46,44}})));
+          Switches.WithStop.Switch4Flows switch4Flows1(control=1,
+              control2=1)
+            annotation (Placement(transformation(extent={{-6,-16},{6,8}})));
+          Mixers.VolumeMixer Mixer1(
+              fixedInitialPressure=false, redeclare package Medium =
+                Fluids.Hydrogen)
+            annotation (Placement(transformation(extent={{-62,-6},{-46,4}})));
+          Switches.WithOutStop.Switch3FlowsEjector
+            switch3FlowsEjector
+            annotation (Placement(transformation(extent={{-6,-46},{6,-34}})));
+          Mixers.VolumeMixer Mixer3(
+              fixedInitialPressure=false, redeclare package Medium =
+                Fluids.Hydrogen)
+            annotation (Placement(transformation(extent={{-62,-46},{-46,-36}})));
+          HeatExchangers.HeatExchangerFixedTemperature
+            heatExchangerFixedTemperature(
+            redeclare package Medium =
+                Fluids.Hydrogen,
+            COP=1,
+            SAEJ2601=true)
+            annotation (Placement(transformation(extent={{48,-28},{68,-16}})));
+        equation
+          medium=Medium.setState_pT(P_amb, T_amb);
+          s_0=Medium.specificEntropy(medium);
+          h_0=Medium.specificEnthalpy(medium);
+          u_0=h_0-P_amb*1/Medium.density(medium);
+          M=tank1_1.M+CHSS.M;
+          U=tank1_1.U+CHSS.U;
+          H=tank1_1.h*tank1_1.M+CHSS.h*CHSS.M;
+
+          if tank1_2.M_out < 1e-10 then
+          Ratio = 0;
+          else
+          Ratio = 100*tank1_1.M_out/tank1_2.M_out;
+          end if;
+
+          SOC=CHSS.medium.d/40.2;
+          EC = 0.1213*tank1_2.M_out + 0.0026 + 0.3425*tank1_1.M_out + 0.0024 + 0.5455*tank1_3.M_out + 0.0027 + 0.7271*tank1_4.M_out + 0.0225;
+
+        HRSinfo.P_amb=P_amb;
+        HRSinfo.P_start=P_start;
+        HRSinfo.FP=P_end;
+        HRSinfo.SOC=SOC_target;
+        HRSinfo.APRR=APRR;
+        HRSinfo.P_ref=P_ref;
+
+         if CHSS.p>=p_ending then
+              terminate("Final pressure reached");
+         end if;
+
+          connect(controlMultiplebanks.pp4, tank1_2.pp) annotation (Line(
+              points={{24,47.36},{-30,47.36},{-30,48},{-80,48},{-80,43.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp5, tank1_1.pp) annotation (Line(
+              points={{24,50.42},{-92,50.42},{-92,3.8},{-80,3.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp6, tank1_3.pp) annotation (Line(
+              points={{24,53.82},{-94,53.82},{-94,-36.2},{-80,-36.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp7, tank1_4.pp) annotation (Line(
+              points={{24,57.22},{-96,57.22},{-96,-76.2},{-80,-76.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp3, CHSS.pp) annotation (Line(
+              points={{53.7,63},{53.7,26.5},{82,26.5},{82,-16.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp3, controlMultiplebanks.pp8) annotation (Line(
+              points={{53.7,63},{38.85,63},{38.85,60.62},{24,60.62}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp3, controlMultiplebanks.pp9) annotation (Line(
+              points={{53.7,63},{38.85,63},{38.85,64.36},{24,64.36}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp3, controlMultiplebanks.pp10) annotation (Line(
+              points={{53.7,63},{38.85,63},{38.85,68.78},{24,68.78}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp3, controlMultiplebanks.pp11) annotation (Line(
+              points={{53.7,63},{39.85,63},{39.85,72.18},{24,72.18}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp3, controlMultiplebanks.pp12) annotation (Line(
+              points={{53.7,63},{38.85,63},{38.85,75.58},{24,75.58}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp3, controlMultiplebanks.pp13) annotation (Line(
+              points={{53.7,63},{38.85,63},{38.85,79.32},{24,79.32}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp1, ejector.pp1) annotation (Line(
+              points={{36,46.34},{36,-16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(ejector.pp2, controlMultiplebanks.pp2) annotation (Line(
+              points={{42,-16},{42,46.34}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_2.portA, Mixer2.portA) annotation (Line(
+              points={{-69.7,40},{-62,40},{-62,39.7143},{-60.9333,39.7143}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_1.portA, Mixer1.portA) annotation (Line(
+              points={{-69.7,0},{-64,0},{-64,-0.285714},{-60.9333,-0.285714}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(switch3FlowsEjector.out1, ejector.lp_tank) annotation (Line(
+              points={{6,-40},{20,-40},{20,-24},{32,-24}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_3.portA, Mixer3.portA) annotation (Line(
+              points={{-69.7,-40},{-66,-40},{-66,-40.2857},{-60.9333,-40.2857}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(Mixer3.portC, switch3FlowsEjector.in3) annotation (Line(
+              points={{-47.2444,-44.5714},{-24.6222,-44.5714},{-24.6222,-44},{
+                  -4.6,-44}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(Mixer1.portC, switch3FlowsEjector.in2) annotation (Line(
+              points={{-47.2444,-4.57143},{-40.6222,-4.57143},{-40.6222,-40},{
+                  -4.6,-40}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(Mixer2.portC, switch3FlowsEjector.in1) annotation (Line(
+              points={{-47.2444,35.4286},{-47.2444,36},{-32,36},{-32,-36},{-4.6,
+                  -36}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(Mixer2.portB, switch4Flows1.in1) annotation (Line(
+              points={{-47.2444,39.7143},{-25.6222,39.7143},{-25.6222,3.2},{
+                  -4.6,3.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(Mixer1.portB, switch4Flows1.in2) annotation (Line(
+              points={{-47.2444,-0.285714},{-25.6222,-0.285714},{-25.6222,-1.6},
+                  {-4.6,-1.6}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(Mixer3.portB, switch4Flows1.in3) annotation (Line(
+              points={{-47.2444,-40.2857},{-43.6222,-40.2857},{-43.6222,-6.4},{
+                  -4.6,-6.4}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_4.portA, switch4Flows1.in4) annotation (Line(
+              points={{-69.7,-80},{-18,-80},{-18,-11.2},{-4.6,-11.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(switch4Flows1.out1, ejector.hp_tank) annotation (Line(
+              points={{6,-4},{20,-4},{20,-16},{32,-16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(heatExchangerFixedTemperature.portB, CHSS.portA) annotation (
+              Line(
+              points={{66,-20},{71.7,-20}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(ejector.car_tank, heatExchangerFixedTemperature.portA)
+            annotation (Line(
+              points={{44,-20},{50,-20}},
+              color={0,0,0},
+              thickness=0.5));
+          annotation (Icon(coordinateSystem(preserveAspectRatio=false)), Diagram(
+                coordinateSystem(preserveAspectRatio=false)));
+        end Ejector_Cascade_4_tanks_MKII;
+
+        model Cascade_no_ejector
+
+          import SI = Modelica.SIunits;
+
+           replaceable package Medium =
+              Fluids.Hydrogen
+           constrainedby Modelica.Media.Interfaces.PartialMedium
+                                                       annotation (choicesAllMatching=true);
+
+        SI.InternalEnergy U;
+        SI.Mass M;
+        SI.Enthalpy H;
+        Real Ratio;
+
+        Medium.ThermodynamicState medium;
+        inner SI.SpecificEntropy s_0;
+        inner SI.SpecificEnthalpy h_0;
+        inner SI.SpecificInternalEnergy u_0;
+        inner parameter SI.Temperature   T_amb=HRSinfo.T_amb;
+        // inner parameter SI.Pressure P_amb=101e3;
+        inner parameter SI.Temperature T_cool=-40+273;
+        parameter SI.Pressure p_ending=80e6;
+        inner SI.Pressure  P_amb;
+        inner SI.Pressure P_start;
+        inner Real SOC_target;
+        inner SI.Pressure P_end;
+        inner SI.Pressure P_ref;
+        inner Real APRR;
+
+        inner Integer z1=controlMultiplebanks.z1;
+        inner Integer z2=controlMultiplebanks.z2;
+        inner Integer z3=0;
+        inner Integer z4=controlMultiplebanks.z4;
+        inner Integer z5=0;
+
+        Real SOC;
+
+          HRSInfo HRSinfo
+            annotation (Placement(transformation(extent={{68,72},{88,92}})));
+
+          Tanks.Tank1 tank1_1(redeclare package
+              Medium =
+                Fluids.Hydrogen, pInitial=90000000)
+            annotation (Placement(transformation(extent={{-90,16},{-68,24}})));
+          Tanks.Tank1 tank1_2(redeclare package
+              Medium =
+                Fluids.Hydrogen, pInitial=30000000)
+            annotation (Placement(transformation(extent={{-90,36},{-68,44}})));
+          Tanks.Tank1 CHSS(
+            redeclare package Medium =
+                Fluids.Hydrogen,
+            V=0.13,
+            pInitial=5000000)
+            annotation (Placement(transformation(extent={{82,-18},{60,-10}})));
+
+          Ejectors.Ejector_one_inlet ejector_MKII(
+            redeclare package Medium =
+                Fluids.Hydrogen,
+            Rt1=0.2,
+            Rt2=0.2,
+            Rt3=0.2)
+            annotation (Placement(transformation(extent={{-4,-24},{16,-4}})));
+          Tanks.Tank1 tank1_3(redeclare package
+              Medium =
+                Fluids.Hydrogen, pInitial=90000000)
+            annotation (Placement(transformation(extent={{-90,-4},{-68,4}})));
+          Tanks.Tank1 tank1_4(redeclare package
+              Medium =
+                Fluids.Hydrogen, pInitial=90000000)
+            annotation (Placement(transformation(extent={{-90,-24},{-68,-16}})));
+          Switches.WithStop.Switch4Flows switch4Flows(
+              control=1, control2=1)
+            annotation (Placement(transformation(extent={{-34,-10},{-22,14}})));
+          Mixers.VolumeMixer Mixer(
+              fixedInitialPressure=false, redeclare package Medium =
+                Fluids.Hydrogen)
+            annotation (Placement(transformation(extent={{-56,34},{-40,44}})));
+          Controls.ControlMultiplebanks
+            controlMultiplebanks(
+            Switch_pressure=100000,
+            Tank1=30000000,
+            Tank2=90000000,
+            Tank3=140000000,
+            Tank4=150000000)
+            annotation (Placement(transformation(extent={{24,46},{54,80}})));
+          HeatExchangers.HeatExchangerFixedTemperature
+            heatExchangerFixedTemperature(
+            redeclare package Medium =
+                Fluids.Hydrogen,
+            COP=1,
+            SAEJ2601=true)
+            annotation (Placement(transformation(extent={{14,-22},{34,-10}})));
+          PressureLosses.PressureLoss pressureLoss(
+            inputChoice="Valve",
+            redeclare package Medium =
+                Fluids.Hydrogen,
+            kv=0.01,
+            pInitial=5000000)
+            annotation (Placement(transformation(extent={{40,-18},{56,-10}})));
+        equation
+          medium=Medium.setState_pT(P_amb, T_amb);
+          s_0=Medium.specificEntropy(medium);
+          h_0=Medium.specificEnthalpy(medium);
+          u_0=h_0-P_amb*1/Medium.density(medium);
+          M=tank1_1.M+CHSS.M;
+          U=tank1_1.U+CHSS.U;
+          H=tank1_1.h*tank1_1.M+CHSS.h*CHSS.M;
+
+          if tank1_2.M_out < 1e-10 then
+          Ratio = 0;
+          else
+          Ratio = 100*tank1_1.M_out/tank1_2.M_out;
+          end if;
+
+          SOC=CHSS.medium.d/40.2;
+
+        HRSinfo.P_amb=P_amb;
+        HRSinfo.P_start=P_start;
+        HRSinfo.FP=P_end;
+        HRSinfo.SOC=SOC_target;
+        HRSinfo.APRR=APRR;
+        HRSinfo.P_ref=P_ref;
+
+         if CHSS.p>=p_ending then
+              terminate("Final pressure reached");
+         end if;
+
+          connect(switch4Flows.out1, ejector_MKII.hp_tank) annotation (Line(
+              points={{-22,2},{-12,2},{-12,-10},{0,-10}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(Mixer.portA, tank1_2.portA) annotation (Line(
+              points={{-54.9333,39.7143},{-62,39.7143},{-62,40},{-69.7,40}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(Mixer.portC, switch4Flows.in1) annotation (Line(
+              points={{-41.2444,35.4286},{-36,35.4286},{-36,9.2},{-32.6,9.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(Mixer.portB, ejector_MKII.lp_tank) annotation (Line(
+              points={{-41.2444,39.7143},{-14,39.7143},{-14,-18},{0,-18}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_1.portA, switch4Flows.in2) annotation (Line(
+              points={{-69.7,20},{-50,20},{-50,4.4},{-32.6,4.4}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_3.portA, switch4Flows.in3) annotation (Line(
+              points={{-69.7,0},{-64,0},{-64,-0.4},{-32.6,-0.4}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_4.portA, switch4Flows.in4) annotation (Line(
+              points={{-69.7,-20},{-52,-20},{-52,-5.2},{-32.6,-5.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp4, tank1_2.pp) annotation (Line(
+              points={{24,47.36},{-30,47.36},{-30,46},{-54,46},{-54,43.8},{-80,
+                  43.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp5, tank1_1.pp) annotation (Line(
+              points={{24,50.42},{-92,50.42},{-92,23.8},{-80,23.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp6, tank1_3.pp) annotation (Line(
+              points={{24,53.82},{-94,53.82},{-94,3.8},{-80,3.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp7, tank1_4.pp) annotation (Line(
+              points={{24,57.22},{-96,57.22},{-96,-16.2},{-80,-16.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp3, CHSS.pp) annotation (Line(
+              points={{53.7,63},{53.7,26.5},{72,26.5},{72,-10.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp3, controlMultiplebanks.pp8) annotation (Line(
+              points={{53.7,63},{38.85,63},{38.85,60.62},{24,60.62}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp3, controlMultiplebanks.pp9) annotation (Line(
+              points={{53.7,63},{38.85,63},{38.85,64.36},{24,64.36}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp3, controlMultiplebanks.pp10) annotation (Line(
+              points={{53.7,63},{38.85,63},{38.85,68.78},{24,68.78}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp3, controlMultiplebanks.pp11) annotation (Line(
+              points={{53.7,63},{39.85,63},{39.85,72.18},{24,72.18}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp3, controlMultiplebanks.pp12) annotation (Line(
+              points={{53.7,63},{38.85,63},{38.85,75.58},{24,75.58}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp3, controlMultiplebanks.pp13) annotation (Line(
+              points={{53.7,63},{38.85,63},{38.85,79.32},{24,79.32}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks.pp1, ejector_MKII.pp1) annotation (Line(
+              points={{36,46.34},{36,30},{4,30},{4,-10}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(ejector_MKII.pp2, controlMultiplebanks.pp2) annotation (Line(
+              points={{10,-10},{10,12},{42,12},{42,46.34}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(ejector_MKII.car_tank, heatExchangerFixedTemperature.portA)
+            annotation (Line(
+              points={{12,-14},{16,-14}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(heatExchangerFixedTemperature.portB, pressureLoss.portA)
+            annotation (Line(
+              points={{32,-14},{40.2,-14}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(pressureLoss.portB, CHSS.portA) annotation (Line(
+              points={{55.4,-14},{61.7,-14}},
+              color={0,0,0},
+              thickness=0.5));
+          annotation (Icon(coordinateSystem(preserveAspectRatio=false)), Diagram(
+                coordinateSystem(preserveAspectRatio=false)));
+        end Cascade_no_ejector;
+
+        model Ejector_2_tanks_MKI
+
+          import SI = Modelica.SIunits;
+
+           replaceable package Medium =
+              Fluids.Hydrogen
+           constrainedby Modelica.Media.Interfaces.PartialMedium
+                                                       annotation (choicesAllMatching=true);
+
+        SI.InternalEnergy U;
+        SI.Mass M;
+        SI.Enthalpy H;
+
+        Medium.ThermodynamicState medium;
+        inner SI.SpecificEntropy s_0;
+        inner SI.SpecificEnthalpy h_0;
+        inner SI.SpecificInternalEnergy u_0;
+        inner parameter SI.Temperature   T_amb=HRSinfo.T_amb;
+        // inner parameter SI.Pressure P_amb=101e3;
+        inner parameter SI.Temperature T_cool=-40+273;
+        parameter SI.Pressure p_ending=(200-20)*1e5;
+        inner SI.Pressure  P_amb;
+        inner SI.Pressure P_start;
+        inner Real SOC_target;
+        inner SI.Pressure P_end;
+        inner SI.Pressure P_ref;
+        inner Real APRR;
+
+          inner Integer z1=controlMultiplebanks_2tanks.z1;
+          inner Integer z2=controlMultiplebanks_2tanks.z2;
+        inner Integer z3=0;
+          inner Integer z4=controlMultiplebanks_2tanks.z4;
+        inner Integer z5=0;
+
+        Real SOC;
+
+          HRSInfo HRSinfo
+            annotation (Placement(transformation(extent={{68,72},{88,92}})));
+
+          Tanks.Tank1 CHSS(
+            redeclare package Medium =
+                Fluids.Hydrogen,
+            V=1.4,
+            pInitial=5000000)
+            annotation (Placement(transformation(extent={{76,-20},{54,-12}})));
+
+          Ejectors.Ejector_MKI ejector(
+            redeclare package Medium =
+                Fluids.Hydrogen,
+            AR1=4,
+            AR2=4)  annotation (Placement(transformation(extent={{-2,-26},{18,-6}})));
+          Tanks.Tank1 tank1_3(redeclare package
+              Medium = Fluids.Hydrogen,
+            V=21,
+            pInitial=1000000)
+            annotation (Placement(transformation(extent={{-56,10},{-34,18}})));
+          Tanks.Tank1 tank1_4(redeclare package
+              Medium = Fluids.Hydrogen,
+            V=21,
+            pInitial=20000000)
+            annotation (Placement(transformation(extent={{-56,-16},{-34,-8}})));
+          Controls.ControlMultiplebanks_2tanks
+            controlMultiplebanks_2tanks(
+            Switch_pressure=100000,
+            Tank1=35000000,
+            Tank2=45000000,
+            Tank3=65000000,
+            Tank4=90000000)
+            annotation (Placement(transformation(extent={{-6,32},{24,66}})));
+
+          HeatExchangers.HeatExchangerFixedTemperature
+            heatExchangerFixedTemperature(
+            redeclare package Medium =
+                Fluids.Hydrogen,
+            COP=1,
+            SAEJ2601=true,
+            T_hex=273.15)
+            annotation (Placement(transformation(extent={{28,-24},{48,-12}})));
+        equation
+          medium=Medium.setState_pT(P_amb, T_amb);
+          s_0=Medium.specificEntropy(medium);
+          h_0=Medium.specificEnthalpy(medium);
+          u_0=h_0-P_amb*1/Medium.density(medium);
+           M=tank1_3.M+CHSS.M;
+           U=tank1_3.U+CHSS.U;
+           H=tank1_3.h*tank1_3.M+CHSS.h*CHSS.M;
+
+           SOC=CHSS.medium.d/40.2;
+
+        HRSinfo.P_amb=P_amb;
+        HRSinfo.P_start=P_start;
+        HRSinfo.FP=P_end;
+        HRSinfo.SOC=SOC_target;
+        HRSinfo.APRR=APRR;
+        HRSinfo.P_ref=P_ref;
+
+         if CHSS.p>=p_ending then
+              terminate("Final pressure reached");
+         end if;
+
+          connect(controlMultiplebanks_2tanks.pp6, tank1_3.pp) annotation (Line(
+              points={{-6,39.82},{-46,39.82},{-46,17.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp7, tank1_4.pp) annotation (Line(
+              points={{-6,43.22},{-60,43.22},{-60,-8.2},{-46,-8.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp3, CHSS.pp) annotation (Line(
+              points={{23.7,49},{23.7,24.5},{66,24.5},{66,-12.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp3,controlMultiplebanks_2tanks. pp8)
+            annotation (Line(
+              points={{23.7,49},{38.85,49},{38.85,46.62},{-6,46.62}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp3,controlMultiplebanks_2tanks. pp9)
+            annotation (Line(
+              points={{23.7,49},{38.85,49},{38.85,50.36},{-6,50.36}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp3,controlMultiplebanks_2tanks. pp10)
+            annotation (Line(
+              points={{23.7,49},{32.85,49},{32.85,54.78},{-6,54.78}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp3,controlMultiplebanks_2tanks. pp11)
+            annotation (Line(
+              points={{23.7,49},{35.85,49},{35.85,58.18},{-6,58.18}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp3,controlMultiplebanks_2tanks. pp12)
+            annotation (Line(
+              points={{23.7,49},{28.85,49},{28.85,61.58},{-6,61.58}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp3,controlMultiplebanks_2tanks. pp13)
+            annotation (Line(
+              points={{23.7,49},{22.85,49},{22.85,65.32},{-6,65.32}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp1, ejector.pp1) annotation (Line(
+              points={{6,32.34},{6,-12}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(ejector.pp2,controlMultiplebanks_2tanks. pp2) annotation (Line(
+              points={{12,-12},{12,32.34}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_4.portA, ejector.hp_tank) annotation (Line(
+              points={{-35.7,-12},{2,-12}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(ejector.car_tank, heatExchangerFixedTemperature.portA)
+            annotation (Line(
+              points={{14,-16},{30,-16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(heatExchangerFixedTemperature.portB, CHSS.portA) annotation (
+              Line(
+              points={{46,-16},{55.7,-16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_3.portA, ejector.lp_tank) annotation (Line(
+              points={{-35.7,14},{-32,14},{-32,-20},{2,-20}},
+              color={0,0,0},
+              thickness=0.5));
+          annotation (Icon(coordinateSystem(preserveAspectRatio=false)), Diagram(
+                coordinateSystem(preserveAspectRatio=false)));
+        end Ejector_2_tanks_MKI;
+
+        model Ejector_Cascade_2_tanks_MKII_dP
+          import SI = Modelica.SIunits;
+
+           replaceable package Medium =
+              Fluids.Hydrogen
+           constrainedby Modelica.Media.Interfaces.PartialMedium
+                                                       annotation (choicesAllMatching=true);
+
+        SI.InternalEnergy U;
+        SI.Mass M;
+        SI.Enthalpy H;
+
+        Medium.ThermodynamicState medium;
+        inner SI.SpecificEntropy s_0;
+        inner SI.SpecificEnthalpy h_0;
+        inner SI.SpecificInternalEnergy u_0;
+        inner parameter SI.Temperature   T_amb=HRSinfo.T_amb;
+        // inner parameter SI.Pressure P_amb=101e3;
+        inner parameter SI.Temperature T_cool=-40+273;
+        parameter SI.Pressure p_ending=80e6;
+        inner SI.Pressure  P_amb;
+        inner SI.Pressure P_start;
+        inner Real SOC_target;
+        inner SI.Pressure P_end;
+        inner SI.Pressure P_ref;
+        inner Real APRR;
+
+          inner Integer z1=controlMultiplebanks_2tanks.z1;
+          inner Integer z2=controlMultiplebanks_2tanks.z2;
+        inner Integer z3=0;
+          inner Integer z4=controlMultiplebanks_2tanks.z4;
+        inner Integer z5=0;
+
+        Real SOC;
+
+          HRSInfo HRSinfo
+            annotation (Placement(transformation(extent={{68,72},{88,92}})));
+
+          Tanks.Tank1 tank1_1(redeclare package
+              Medium =
+                Fluids.Hydrogen, pInitial=30000000)
+            annotation (Placement(transformation(extent={{-66,-2},{-44,6}})));
+          Tanks.Tank1 CHSS(
+            redeclare package Medium =
+                Fluids.Hydrogen,
+            V=0.13,
+            pInitial=5000000)
+            annotation (Placement(transformation(extent={{100,-24},{78,-16}})));
+
+          Ejectors.Ejector_MKII ejector(                              redeclare
+              package Medium =
+                       Fluids.Hydrogen,
+            AR1=7.5,
+            AR2=7.5,
+            AR3=7.5)
+            annotation (Placement(transformation(extent={{28,-30},{48,-10}})));
+          Tanks.Tank1 tank1_3(redeclare package
+              Medium =
+                Fluids.Hydrogen, pInitial=90000000)
+            annotation (Placement(transformation(extent={{-66,-42},{-44,-34}})));
+          Controls.ControlMultiplebanks_2tanks
+            controlMultiplebanks_2tanks(
+            Switch_pressure=100000,
+            Tank1=30000000,
+            Tank2=90000000,
+            Tank3=140000000,
+            Tank4=150000000)
+            annotation (Placement(transformation(extent={{24,46},{54,80}})));
+          Mixers.VolumeMixer Mixer1(
+              fixedInitialPressure=false, redeclare package Medium =
+                Fluids.Hydrogen)
+            annotation (Placement(transformation(extent={{-40,-4},{-24,6}})));
+          HeatExchangers.HeatExchangerFixedTemperature
+            heatExchangerFixedTemperature(
+            redeclare package Medium =
+                Fluids.Hydrogen,
+            COP=1,
+            SAEJ2601=true)
+            annotation (Placement(transformation(extent={{46,-28},{66,-16}})));
+          PressureLosses.PressureLoss pressureLoss(
+            redeclare package Medium =
+                Fluids.Hydrogen,
+            inputChoice="Valve",
+            kv=0.01,
+            pInitial=5000000)
+            annotation (Placement(transformation(extent={{64,-38},{80,-30}})));
+          Switches.WithOutStop.Switch2Flows
+            switch2Flows1
+            annotation (Placement(transformation(extent={{-2,-22},{10,-10}})));
+        equation
+          medium=Medium.setState_pT(P_amb, T_amb);
+          s_0=Medium.specificEntropy(medium);
+          h_0=Medium.specificEnthalpy(medium);
+          u_0=h_0-P_amb*1/Medium.density(medium);
+          M=tank1_1.M+CHSS.M;
+          U=tank1_1.U+CHSS.U;
+          H=tank1_1.h*tank1_1.M+CHSS.h*CHSS.M;
+
+          SOC=CHSS.medium.d/40.2;
+
+        HRSinfo.P_amb=P_amb;
+        HRSinfo.P_start=P_start;
+        HRSinfo.FP=P_end;
+        HRSinfo.SOC=SOC_target;
+        HRSinfo.APRR=APRR;
+        HRSinfo.P_ref=P_ref;
+
+         if CHSS.p>=p_ending then
+              terminate("Final pressure reached");
+         end if;
+
+          connect(controlMultiplebanks_2tanks.pp6, tank1_3.pp) annotation (Line(
+              points={{24,53.82},{-70,53.82},{-70,-34.2},{-56,-34.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp3, CHSS.pp) annotation (Line(
+              points={{53.7,63},{53.7,26.5},{90,26.5},{90,-16.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp3,controlMultiplebanks_2tanks. pp8)
+            annotation (Line(
+              points={{53.7,63},{38.85,63},{38.85,60.62},{24,60.62}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp3,controlMultiplebanks_2tanks. pp9)
+            annotation (Line(
+              points={{53.7,63},{38.85,63},{38.85,64.36},{24,64.36}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp3,controlMultiplebanks_2tanks. pp10)
+            annotation (Line(
+              points={{53.7,63},{38.85,63},{38.85,68.78},{24,68.78}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp3,controlMultiplebanks_2tanks. pp11)
+            annotation (Line(
+              points={{53.7,63},{39.85,63},{39.85,72.18},{24,72.18}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp3,controlMultiplebanks_2tanks. pp12)
+            annotation (Line(
+              points={{53.7,63},{38.85,63},{38.85,75.58},{24,75.58}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp3,controlMultiplebanks_2tanks. pp13)
+            annotation (Line(
+              points={{53.7,63},{38.85,63},{38.85,79.32},{24,79.32}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp1, ejector.pp1) annotation (Line(
+              points={{36,46.34},{36,-16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(ejector.pp2,controlMultiplebanks_2tanks. pp2) annotation (Line(
+              points={{42,-16},{42,46.34}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_1.portA, Mixer1.portA) annotation (Line(
+              points={{-45.7,2},{-40,2},{-40,1.71429},{-38.9333,1.71429}},
+              color={0,0,0},
+              thickness=0.5));
+
+          connect(ejector.car_tank, heatExchangerFixedTemperature.portA) annotation (
+              Line(
+              points={{44,-20},{48,-20}},
+              color={0,0,0},
+              thickness=0.5));
+
+          connect(heatExchangerFixedTemperature.portB, pressureLoss.portA)
+            annotation (Line(
+              points={{64,-20},{64.2,-20},{64.2,-34}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(pressureLoss.portB, CHSS.portA) annotation (Line(
+              points={{79.4,-34},{79.7,-34},{79.7,-20}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(switch2Flows1.out1, ejector.hp_tank) annotation (Line(
+              points={{10,-16},{32,-16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(Mixer1.portC, ejector.lp_tank) annotation (Line(
+              points={{-25.2444,-2.57143},{-24.6222,-2.57143},{-24.6222,-24},{
+                  32,-24}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_1.pp, controlMultiplebanks_2tanks.pp7) annotation (Line(
+              points={{-56,5.8},{-56,57.22},{24,57.22}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_3.portA, switch2Flows1.in2) annotation (Line(
+              points={{-45.7,-38},{-14,-38},{-14,-20},{-0.6,-20}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(Mixer1.portB, switch2Flows1.in1) annotation (Line(
+              points={{-25.2444,1.71429},{-12.6222,1.71429},{-12.6222,-12},{
+                  -0.6,-12}},
+              color={0,0,0},
+              thickness=0.5));
+          annotation (Icon(coordinateSystem(preserveAspectRatio=false)), Diagram(
+                coordinateSystem(preserveAspectRatio=false)));
+        end Ejector_Cascade_2_tanks_MKII_dP;
+
+        model Ejector_Cascade_2_tanks_MKII_dP_Low_Press
+          import SI = Modelica.SIunits;
+          import HydrogenFuelingStationLibrary;
+
+           replaceable package Medium =
+              HydrogenFuelingStationLibrary.Fluids.Hydrogen
+           constrainedby Modelica.Media.Interfaces.PartialMedium
+                                                       annotation (choicesAllMatching=true);
+
+        SI.InternalEnergy U;
+        SI.Mass M;
+        SI.Enthalpy H;
+
+        Medium.ThermodynamicState medium;
+        inner SI.SpecificEntropy s_0;
+        inner SI.SpecificEnthalpy h_0;
+        inner SI.SpecificInternalEnergy u_0;
+        inner parameter SI.Temperature   T_amb=HRSinfo.T_amb;
+        // inner parameter SI.Pressure P_amb=101e3;
+        inner parameter SI.Temperature T_cool=-40+273;
+        parameter SI.Pressure p_ending=35e6;
+        inner SI.Pressure  P_amb;
+        inner SI.Pressure P_start;
+        inner Real SOC_target;
+        inner SI.Pressure P_end;
+        inner SI.Pressure P_ref;
+        inner Real APRR;
+        inner SI.Pressure dp;
+        inner SI.Pressure dp_max;
+
+          inner Integer z1=controlMultiplebanks_2tanks.z1;
+          inner Integer z2=controlMultiplebanks_2tanks.z2;
+        inner Integer z3=0;
+          inner Integer z4=controlMultiplebanks_2tanks.z4;
+        inner Integer z5=0;
+
+        Real SOC;
+
+          HydrogenFuelingStationLibrary.HRSInfo HRSinfo
+            annotation (Placement(transformation(extent={{68,72},{88,92}})));
+
+          HydrogenFuelingStationLibrary.Tanks.Tank1 tank1_1(
+            V=25,
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            pInitial=7500000)
+            annotation (Placement(transformation(extent={{-82,-2},{-60,6}})));
+          HydrogenFuelingStationLibrary.Tanks.Tank1 CHSS(
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            V=1.4,
+            pInitial=5000000)
+            annotation (Placement(transformation(extent={{100,-24},{78,-16}})));
+
+          HydrogenFuelingStationLibrary.Ejectors.Ejector_MKII ejector(redeclare
+              package
+              Medium = HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            AR2=7.5,
+            AR3=7.5,
+            AR1=8)
+            annotation (Placement(transformation(extent={{18,-30},{38,-10}})));
+          HydrogenFuelingStationLibrary.Tanks.Tank1 tank1_3(redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            V=25,
+            pInitial=50000000)
+            annotation (Placement(transformation(extent={{-82,-42},{-60,-34}})));
+          HydrogenFuelingStationLibrary.Controls.ControlMultiplebanks_2tanks
+            controlMultiplebanks_2tanks(
+            Switch_pressure=100000,
+            Tank1=30000000,
+            Tank2=90000000,
+            Tank3=140000000,
+            Tank4=150000000)
+            annotation (Placement(transformation(extent={{14,46},{44,80}})));
+          HydrogenFuelingStationLibrary.Mixers.VolumeMixer Mixer1(
+              fixedInitialPressure=false, redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen)
+            annotation (Placement(transformation(extent={{-56,-4},{-40,6}})));
+          HydrogenFuelingStationLibrary.HeatExchangers.HeatExchangerFixedTemperature
+            heatExchangerFixedTemperature(
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            COP=1,
+            SAEJ2601=true)
+            annotation (Placement(transformation(extent={{36,-28},{56,-16}})));
+          HydrogenFuelingStationLibrary.PressureLosses.PressureLoss pressureLoss(
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            inputChoice="Valve",
+            kv=0.017,
+            pInitial=5000000)
+            annotation (Placement(transformation(extent={{60,-22},{76,-14}})));
+          HydrogenFuelingStationLibrary.Switches.WithOutStop.Switch2Flows
+            switch2Flows1
+            annotation (Placement(transformation(extent={{-18,-22},{-6,-10}})));
+        equation
+          medium=Medium.setState_pT(P_amb, T_amb);
+          s_0=Medium.specificEntropy(medium);
+          h_0=Medium.specificEnthalpy(medium);
+          u_0=h_0-P_amb*1/Medium.density(medium);
+          M=tank1_1.M+CHSS.M;
+          U=tank1_1.U+CHSS.U;
+          H=tank1_1.h*tank1_1.M+CHSS.h*CHSS.M;
+
+          SOC=CHSS.medium.d/40.2;
+          dp = pressureLoss.portA.p - pressureLoss.portB.p;
+          dp_max = max((dp),(dp_max));
+
+        HRSinfo.P_amb=P_amb;
+        HRSinfo.P_start=P_start;
+        HRSinfo.FP=P_end;
+        HRSinfo.SOC=SOC_target;
+        HRSinfo.APRR=APRR;
+        HRSinfo.P_ref=P_ref;
+
+         if CHSS.p>=p_ending then
+              terminate("Final pressure reached");
+         end if;
+
+          connect(controlMultiplebanks_2tanks.pp6, tank1_3.pp) annotation (Line(
+              points={{14,53.82},{-86,53.82},{-86,-34.2},{-72,-34.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp3, CHSS.pp) annotation (Line(
+              points={{43.7,63},{43.7,26.5},{90,26.5},{90,-16.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp3,controlMultiplebanks_2tanks. pp8)
+            annotation (Line(
+              points={{43.7,63},{28.85,63},{28.85,60.62},{14,60.62}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp3,controlMultiplebanks_2tanks. pp9)
+            annotation (Line(
+              points={{43.7,63},{28.85,63},{28.85,64.36},{14,64.36}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp3,controlMultiplebanks_2tanks. pp10)
+            annotation (Line(
+              points={{43.7,63},{28.85,63},{28.85,68.78},{14,68.78}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp3,controlMultiplebanks_2tanks. pp11)
+            annotation (Line(
+              points={{43.7,63},{29.85,63},{29.85,72.18},{14,72.18}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp3,controlMultiplebanks_2tanks. pp12)
+            annotation (Line(
+              points={{43.7,63},{28.85,63},{28.85,75.58},{14,75.58}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp3,controlMultiplebanks_2tanks. pp13)
+            annotation (Line(
+              points={{43.7,63},{28.85,63},{28.85,79.32},{14,79.32}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp1, ejector.pp1) annotation (Line(
+              points={{26,46.34},{26,-16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(ejector.pp2,controlMultiplebanks_2tanks. pp2) annotation (Line(
+              points={{32,-16},{32,46.34}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_1.portA, Mixer1.portA) annotation (Line(
+              points={{-61.7,2},{-56,2},{-56,1.71429},{-54.9333,1.71429}},
+              color={0,0,0},
+              thickness=0.5));
+
+          connect(ejector.car_tank, heatExchangerFixedTemperature.portA) annotation (
+              Line(
+              points={{34,-20},{38,-20}},
+              color={0,0,0},
+              thickness=0.5));
+
+          connect(heatExchangerFixedTemperature.portB, pressureLoss.portA)
+            annotation (Line(
+              points={{54,-20},{58,-20},{58,-18},{60.2,-18}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(pressureLoss.portB, CHSS.portA) annotation (Line(
+              points={{75.4,-18},{78,-18},{78,-20},{79.7,-20}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(switch2Flows1.out1, ejector.hp_tank) annotation (Line(
+              points={{-6,-16},{22,-16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(Mixer1.portC, ejector.lp_tank) annotation (Line(
+              points={{-41.2444,-2.57143},{-34.6222,-2.57143},{-34.6222,-24},{
+                  22,-24}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_1.pp, controlMultiplebanks_2tanks.pp7) annotation (Line(
+              points={{-72,5.8},{-72,57.22},{14,57.22}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_3.portA, switch2Flows1.in2) annotation (Line(
+              points={{-61.7,-38},{-30,-38},{-30,-20},{-16.6,-20}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(Mixer1.portB, switch2Flows1.in1) annotation (Line(
+              points={{-41.2444,1.71429},{-28.6222,1.71429},{-28.6222,-12},{
+                  -16.6,-12}},
+              color={0,0,0},
+              thickness=0.5));
+          annotation (Icon(coordinateSystem(preserveAspectRatio=false)), Diagram(
+                coordinateSystem(preserveAspectRatio=false)));
+        end Ejector_Cascade_2_tanks_MKII_dP_Low_Press;
+
+        model Ejector_Cascade_2_tanks_MKI_Low_Press
+
+          import SI = Modelica.SIunits;
+          import HydrogenFuelingStationLibrary;
+
+           replaceable package Medium =
+              HydrogenFuelingStationLibrary.Fluids.Hydrogen
+           constrainedby Modelica.Media.Interfaces.PartialMedium
+                                                       annotation (choicesAllMatching=true);
+
+        SI.InternalEnergy U;
+        SI.Mass M;
+        SI.Enthalpy H;
+
+        Medium.ThermodynamicState medium;
+        inner SI.SpecificEntropy s_0;
+        inner SI.SpecificEnthalpy h_0;
+        inner SI.SpecificInternalEnergy u_0;
+        inner parameter SI.Temperature   T_amb=HRSinfo.T_amb;
+        // inner parameter SI.Pressure P_amb=101e3;
+        inner parameter SI.Temperature T_cool=-40+273;
+        parameter SI.Pressure p_ending=35e6;
+        inner SI.Pressure  P_amb;
+        inner SI.Pressure P_start;
+        inner Real SOC_target;
+        inner SI.Pressure P_end;
+        inner SI.Pressure P_ref;
+        inner Real APRR;
+
+          inner Integer z1=controlMultiplebanks_2tanks.z1;
+          inner Integer z2=controlMultiplebanks_2tanks.z2;
+        inner Integer z3=0;
+          inner Integer z4=controlMultiplebanks_2tanks.z4;
+        inner Integer z5=0;
+
+        Real SOC;
+        Real EC;
+
+          HydrogenFuelingStationLibrary.HRSInfo HRSinfo
+            annotation (Placement(transformation(extent={{68,72},{88,92}})));
+
+          HydrogenFuelingStationLibrary.Tanks.Tank1 CHSS(
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            V=1.4,
+            pInitial=5000000)
+            annotation (Placement(transformation(extent={{76,-20},{54,-12}})));
+
+          HydrogenFuelingStationLibrary.Ejectors.Ejector_MKI ejector(
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            AR1=8,
+            AR2=8,
+            AR3=8)  annotation (Placement(transformation(extent={{-2,-26},{18,-6}})));
+          HydrogenFuelingStationLibrary.Tanks.Tank1 tank1_3(redeclare package Medium =
+                       HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            V=25,
+            pInitial=1000000)
+            annotation (Placement(transformation(extent={{-56,10},{-34,18}})));
+          HydrogenFuelingStationLibrary.Tanks.Tank1 tank1_4(redeclare package Medium =
+                       HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            V=25,
+            pInitial=20000000)
+            annotation (Placement(transformation(extent={{-56,-16},{-34,-8}})));
+          HydrogenFuelingStationLibrary.Controls.ControlMultiplebanks_2tanks
+            controlMultiplebanks_2tanks(
+            Switch_pressure=100000,
+            Tank1=35000000,
+            Tank2=45000000,
+            Tank3=65000000,
+            Tank4=90000000)
+            annotation (Placement(transformation(extent={{-6,32},{24,66}})));
+
+          HydrogenFuelingStationLibrary.HeatExchangers.HeatExchangerFixedTemperature
+            heatExchangerFixedTemperature(
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            COP=1,
+            SAEJ2601=true,
+            T_hex=273.15)
+            annotation (Placement(transformation(extent={{28,-24},{48,-12}})));
+        equation
+          medium=Medium.setState_pT(P_amb, T_amb);
+          s_0=Medium.specificEntropy(medium);
+          h_0=Medium.specificEnthalpy(medium);
+          u_0=h_0-P_amb*1/Medium.density(medium);
+          M=tank1_3.M+CHSS.M;
+          U=tank1_3.U+CHSS.U;
+          H=tank1_3.h*tank1_3.M+CHSS.h*CHSS.M;
+
+          SOC=CHSS.medium.d/40.2;
+          EC = 0.1213*tank1_3.M_out + 0.0026 + 0.7271*tank1_4.M_out + 0.0225;
+
+        HRSinfo.P_amb=P_amb;
+        HRSinfo.P_start=P_start;
+        HRSinfo.FP=P_end;
+        HRSinfo.SOC=SOC_target;
+        HRSinfo.APRR=APRR;
+        HRSinfo.P_ref=P_ref;
+
+         if CHSS.p>=p_ending then
+              terminate("Final pressure reached");
+         end if;
+
+          connect(controlMultiplebanks_2tanks.pp6, tank1_3.pp) annotation (Line(
+              points={{-6,39.82},{-46,39.82},{-46,17.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp7, tank1_4.pp) annotation (Line(
+              points={{-6,43.22},{-60,43.22},{-60,-8.2},{-46,-8.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp3, CHSS.pp) annotation (Line(
+              points={{23.7,49},{23.7,24.5},{66,24.5},{66,-12.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp3,controlMultiplebanks_2tanks. pp8)
+            annotation (Line(
+              points={{23.7,49},{38.85,49},{38.85,46.62},{-6,46.62}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp3,controlMultiplebanks_2tanks. pp9)
+            annotation (Line(
+              points={{23.7,49},{38.85,49},{38.85,50.36},{-6,50.36}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp3,controlMultiplebanks_2tanks. pp10)
+            annotation (Line(
+              points={{23.7,49},{32.85,49},{32.85,54.78},{-6,54.78}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp3,controlMultiplebanks_2tanks. pp11)
+            annotation (Line(
+              points={{23.7,49},{35.85,49},{35.85,58.18},{-6,58.18}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp3,controlMultiplebanks_2tanks. pp12)
+            annotation (Line(
+              points={{23.7,49},{28.85,49},{28.85,61.58},{-6,61.58}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp3,controlMultiplebanks_2tanks. pp13)
+            annotation (Line(
+              points={{23.7,49},{22.85,49},{22.85,65.32},{-6,65.32}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(controlMultiplebanks_2tanks.pp1, ejector.pp1) annotation (Line(
+              points={{6,32.34},{6,-12}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(ejector.pp2,controlMultiplebanks_2tanks. pp2) annotation (Line(
+              points={{12,-12},{12,32.34}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_4.portA, ejector.hp_tank) annotation (Line(
+              points={{-35.7,-12},{2,-12}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(ejector.car_tank, heatExchangerFixedTemperature.portA)
+            annotation (Line(
+              points={{14,-16},{30,-16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(heatExchangerFixedTemperature.portB, CHSS.portA) annotation (
+              Line(
+              points={{46,-16},{55.7,-16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_3.portA, ejector.lp_tank) annotation (Line(
+              points={{-35.7,14},{-32,14},{-32,-20},{2,-20}},
+              color={0,0,0},
+              thickness=0.5));
+          annotation (Icon(coordinateSystem(preserveAspectRatio=false)), Diagram(
+                coordinateSystem(preserveAspectRatio=false)));
+        end Ejector_Cascade_2_tanks_MKI_Low_Press;
+      end HighPressEjector;
+
+      package JTCoefficient
+        model TemperatureDevelopment3 "Without Cooling and pressure loss"
+          import SI = Modelica.SIunits;
+          import HydrogenFuellingStationLibrary = HydrogenFuelingStationLibrary;
+
+           replaceable package Medium =
+              HydrogenFuellingStationLibrary.Fluids.Hydrogen
+           constrainedby Modelica.Media.Interfaces.PartialMedium
+                                                       annotation (choicesAllMatching=true);
+
+        SI.InternalEnergy U;
+        SI.Mass M;
+        SI.Enthalpy H;
+
+        Medium.ThermodynamicState medium;
+        inner SI.SpecificEntropy s_0;
+        inner SI.SpecificEnthalpy h_0;
+        inner SI.SpecificInternalEnergy u_0;
+        inner parameter SI.Temperature   T_amb=HRSinfo.T_amb;
+        // inner parameter SI.Pressure P_amb=101e3;
+        inner parameter SI.Temperature T_cool=-40;
+        parameter SI.Pressure p_ending=80e6;
+        inner SI.Pressure  P_amb;
+        inner SI.Pressure P_start;
+        inner Real SOC_target;
+        inner SI.Pressure P_end;
+        inner SI.Pressure P_ref;
+        inner Real APRR;
+
+        inner Integer z3=0;
+        inner Integer z5=0;
+
+          HydrogenFuellingStationLibrary.Tanks.Tank1 tank1_1(
+            fixedInitialPressure=true,
+            m_flowStart=0,
+            redeclare package Medium =
+                HydrogenFuellingStationLibrary.Fluids.Hydrogen,
+            Adiabatic=true,
+            V=0.04578,
+            pInitial=10000000,
+            TInitial=96.15)
+            annotation (Placement(transformation(extent={{-92,12},{-70,20}})));
+          HydrogenFuellingStationLibrary.Tanks.Tank1 CHSS(
+            redeclare package Medium =
+                HydrogenFuellingStationLibrary.Fluids.Hydrogen,
+            V=0.1973,
+            Adiabatic=true,
+            pInitial=2000000,
+            TInitial=96.15)
+            annotation (Placement(transformation(extent={{44,12},{24,20}})));
+          HydrogenFuellingStationLibrary.PressureLosses.ReductionValve reductionValve(
+              redeclare package Medium =
+                HydrogenFuellingStationLibrary.Fluids.Hydrogen,
+            pInitialIn=10000000,
+            TInitialIn=96.15,
+            pInitialOut=2000000)
+            annotation (Placement(transformation(extent={{-50,12},{-38,20}})));
+          HydrogenFuellingStationLibrary.HRSInfo HRSinfo
+            annotation (Placement(transformation(extent={{68,72},{88,92}})));
+
+          HydrogenFuellingStationLibrary.Tanks.Tank1_2
+                                                     tank1_2(
+            fixedInitialPressure=true,
+            m_flowStart=0,
+            V=100,
+            redeclare package Medium =
+                HydrogenFuellingStationLibrary.Fluids.Hydrogen,
+            Adiabatic=false,
+            pInitial=100000000,
+            TInitial=96.15)
+            annotation (Placement(transformation(extent={{-90,-24},{-68,-16}})));
+          HydrogenFuellingStationLibrary.Tanks.Tank1 CHSS1(
+            redeclare package Medium =
+                HydrogenFuellingStationLibrary.Fluids.Hydrogen,
+            V=0.172,
+            Adiabatic=false,
+            pInitial=5000000,
+            TInitial=96.15)
+            annotation (Placement(transformation(extent={{44,-24},{24,-16}})));
+          HydrogenFuellingStationLibrary.PressureLosses.ReductionValve reductionValve1(
+              redeclare package Medium =
+                HydrogenFuellingStationLibrary.Fluids.Hydrogen)
+            annotation (Placement(transformation(extent={{-48,-24},{-36,-16}})));
+          HydrogenFuellingStationLibrary.PressureLosses.AveragePressureRampRate
+            averagePressureRampRate1(
+            redeclare package Medium =
+                HydrogenFuellingStationLibrary.Fluids.Hydrogen,
+            SAEJ2601=false,
+            APRR2=35000000,
+            pInitial=5000000)
+            annotation (Placement(transformation(extent={{-16,-24},{-4,-14}})));
+          HydrogenFuellingStationLibrary.HeatTransfer.HeatTransferTank
+            heatTransferTank1(
+            Charging=false,
+            tank=2,
+            Area=false) annotation (Placement(transformation(extent={{-88,-50},
+                    {-68,-30}})));
+          HydrogenFuellingStationLibrary.HeatTransfer.HeatTransferTank
+            heatTransferTank2(
+            Charging=false,
+            tank=2,
+            Area=false)
+            annotation (Placement(transformation(extent={{32,-54},{52,-34}})));
+          HydrogenFuellingStationLibrary.HeatTransfer.HeatTransferTank
+            heatTransferTank3(
+            Charging=false,
+            tank=2,
+            Area=false)
+            annotation (Placement(transformation(extent={{26,-14},{46,6}})));
+          HydrogenFuellingStationLibrary.PressureLosses.AveragePressureRampRate
+            averagePressureRampRate2(
+            redeclare package Medium =
+                HydrogenFuellingStationLibrary.Fluids.Hydrogen,
+            SAEJ2601=false,
+            APRR2=1000000,
+            pInitial=2000000,
+            TInitial=96.15)
+            annotation (Placement(transformation(extent={{-16,12},{-4,22}})));
+        equation
+          medium=Medium.setState_pT(P_amb, T_amb);
+          s_0=Medium.specificEntropy(medium);
+          h_0=Medium.specificEnthalpy(medium);
+          u_0=h_0-P_amb*1/Medium.density(medium);
+           M=tank1_1.M+CHSS.M;
+           U=tank1_1.U+CHSS.U;
+           H=tank1_1.h*tank1_1.M+CHSS.h*CHSS.M;
+
+        HRSinfo.P_amb=P_amb;
+        HRSinfo.P_start=P_start;
+        HRSinfo.FP=P_end;
+        HRSinfo.SOC=SOC_target;
+        HRSinfo.APRR=APRR;
+        HRSinfo.P_ref=P_ref;
+
+         if CHSS.p>=p_ending then
+              terminate("Final pressure reached");
+         end if;
+
+          connect(reductionValve1.portA, tank1_2.portA) annotation (Line(
+              points={{-48,-20},{-69.7,-20}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(averagePressureRampRate1.portB, CHSS1.portA) annotation (Line(
+              points={{-4.8,-20},{25.5455,-20}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(reductionValve1.portB, averagePressureRampRate1.portA)
+            annotation (Line(
+              points={{-36,-20},{-15,-20}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(heatTransferTank1.heatFlow, tank1_2.heatFlow) annotation (
+              Line(
+              points={{-79.4,-31.6},{-79.4,-27.8},{-80,-27.8},{-80,-23.9}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(heatTransferTank2.heatFlow, CHSS1.heatFlow) annotation (Line(
+              points={{40.6,-35.6},{40.6,-29.8},{34.9091,-29.8},{34.9091,-23.9}},
+              color={0,0,0},
+              thickness=0.5));
+
+          connect(heatTransferTank3.heatFlow, CHSS.heatFlow) annotation (Line(
+              points={{34.6,4.4},{34.6,7.2},{34.9091,7.2},{34.9091,12.1}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_1.portA, reductionValve.portA) annotation (Line(
+              points={{-71.7,16},{-50,16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(reductionValve.portB, averagePressureRampRate2.portA)
+            annotation (Line(
+              points={{-38,16},{-15,16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(averagePressureRampRate2.portB, CHSS.portA) annotation (Line(
+              points={{-4.8,16},{25.5455,16}},
+              color={0,0,0},
+              thickness=0.5));
+          annotation (Diagram(coordinateSystem(preserveAspectRatio=false, extent={{-100,
+                    -100},{100,100}})));
+        end TemperatureDevelopment3;
+
+        model TemperatureDevelopment1 "Without Cooling and pressure loss"
+          import SI = Modelica.SIunits;
+          import HydrogenFuellingStationLibrary = HydrogenFuelingStationLibrary;
+
+           replaceable package Medium =
+              HydrogenFuellingStationLibrary.Fluids.Hydrogen
+           constrainedby Modelica.Media.Interfaces.PartialMedium
+                                                       annotation (choicesAllMatching=true);
+
+        SI.InternalEnergy U;
+        SI.Mass M;
+        SI.Enthalpy H;
+
+        Medium.ThermodynamicState medium;
+        inner SI.SpecificEntropy s_0;
+        inner SI.SpecificEnthalpy h_0;
+        inner SI.SpecificInternalEnergy u_0;
+        inner parameter SI.Temperature   T_amb=HRSinfo.T_amb;
+        // inner parameter SI.Pressure P_amb=101e3;
+        inner parameter SI.Temperature T_cool=-40;
+        parameter SI.Pressure p_ending=80e6;
+        inner SI.Pressure  P_amb;
+        inner SI.Pressure P_start;
+        inner Real SOC_target;
+        inner SI.Pressure P_end;
+        inner SI.Pressure P_ref;
+        inner Real APRR;
+
+        inner Integer z3=0;
+        inner Integer z5=0;
+
+          HydrogenFuellingStationLibrary.Tanks.Tank1 tank1_1(
+            fixedInitialPressure=true,
+            m_flowStart=0,
+            redeclare package Medium =
+                HydrogenFuellingStationLibrary.Fluids.Hydrogen,
+            Adiabatic=false,
+            V=1,
+            pInitial=100000000)
+            annotation (Placement(transformation(extent={{-92,12},{-70,20}})));
+          HydrogenFuellingStationLibrary.Tanks.Tank1 CHSS(
+            redeclare package Medium =
+                HydrogenFuellingStationLibrary.Fluids.Hydrogen,
+            V=0.172,
+            Adiabatic=false,
+            pInitial=5000000)
+            annotation (Placement(transformation(extent={{44,12},{24,20}})));
+          HydrogenFuellingStationLibrary.PressureLosses.ReductionValve reductionValve(
+              redeclare package Medium =
+                HydrogenFuellingStationLibrary.Fluids.Hydrogen)
+            annotation (Placement(transformation(extent={{-50,12},{-38,20}})));
+          HydrogenFuellingStationLibrary.HRSInfo HRSinfo
+            annotation (Placement(transformation(extent={{68,72},{88,92}})));
+
+          HydrogenFuellingStationLibrary.Tanks.Tank1_2
+                                                     tank1_2(
+            fixedInitialPressure=true,
+            m_flowStart=0,
+            V=100,
+            Adiabatic=false,
+            redeclare package Medium = Modelica.Media.IdealGases.SingleGases.H2,
+            pInitial=100000000)
+            annotation (Placement(transformation(extent={{-90,-24},{-68,-16}})));
+
+          HydrogenFuellingStationLibrary.Tanks.Tank1 CHSS1(
+            V=0.172,
+            Adiabatic=false,
+            redeclare package Medium = Modelica.Media.IdealGases.SingleGases.H2,
+            pInitial=5000000)
+            annotation (Placement(transformation(extent={{46,-24},{26,-16}})));
+
+          HydrogenFuellingStationLibrary.PressureLosses.ReductionValve reductionValve1(
+              redeclare package Medium =
+                Modelica.Media.IdealGases.SingleGases.H2)
+            annotation (Placement(transformation(extent={{-48,-24},{-36,-16}})));
+          HydrogenFuellingStationLibrary.HeatTransfer.HeatTransferTank
+            heatTransferTank(
+            Charging=false,
+            tank=2,
+            Area=false)
+            annotation (Placement(transformation(extent={{-90,-12},{-70,8}})));
+          HydrogenFuellingStationLibrary.HeatTransfer.HeatTransferTank
+            heatTransferTank1(
+            Charging=false,
+            tank=2,
+            Area=false) annotation (Placement(transformation(extent={{-88,-50},
+                    {-68,-30}})));
+          HydrogenFuellingStationLibrary.HeatTransfer.HeatTransferTank
+            heatTransferTank2(
+            Charging=false,
+            tank=2,
+            Area=false)
+            annotation (Placement(transformation(extent={{32,-54},{52,-34}})));
+          HydrogenFuellingStationLibrary.HeatTransfer.HeatTransferTank
+            heatTransferTank3(
+            Charging=false,
+            tank=2,
+            Area=false)
+            annotation (Placement(transformation(extent={{26,-14},{46,6}})));
+        equation
+          medium=Medium.setState_pT(P_amb, T_amb);
+          s_0=Medium.specificEntropy(medium);
+          h_0=Medium.specificEnthalpy(medium);
+          u_0=h_0-P_amb*1/Medium.density(medium);
+           M=tank1_1.M+CHSS.M;
+           U=tank1_1.U+CHSS.U;
+           H=tank1_1.h*tank1_1.M+CHSS.h*CHSS.M;
+
+        HRSinfo.P_amb=P_amb;
+        HRSinfo.P_start=P_start;
+        HRSinfo.FP=P_end;
+        HRSinfo.SOC=SOC_target;
+        HRSinfo.APRR=APRR;
+        HRSinfo.P_ref=P_ref;
+
+          connect(reductionValve.portA, tank1_1.portA) annotation (Line(
+              points={{-50,16},{-71.7,16}},
+              color={0,0,0},
+              thickness=0.5));
+
+         if CHSS.p>=p_ending then
+              terminate("Final pressure reached");
+         end if;
+
+          connect(reductionValve1.portA, tank1_2.portA) annotation (Line(
+              points={{-48,-20},{-69.7,-20}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(heatTransferTank.heatFlow, tank1_1.heatFlow) annotation (Line(
+              points={{-81.4,6.4},{-81.4,9.2},{-82,9.2},{-82,12.1}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(heatTransferTank1.heatFlow, tank1_2.heatFlow) annotation (
+              Line(
+              points={{-79.4,-31.6},{-79.4,-27.8},{-80,-27.8},{-80,-23.9}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(heatTransferTank2.heatFlow, CHSS1.heatFlow) annotation (Line(
+              points={{40.6,-35.6},{40.6,-29.8},{36.9091,-29.8},{36.9091,-23.9}},
+              color={0,0,0},
+              thickness=0.5));
+
+          connect(heatTransferTank3.heatFlow, CHSS.heatFlow) annotation (Line(
+              points={{34.6,4.4},{34.6,7.2},{34.9091,7.2},{34.9091,12.1}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(reductionValve1.portB, CHSS1.portA) annotation (Line(
+              points={{-36,-20},{27.5455,-20}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(reductionValve.portB, CHSS.portA) annotation (Line(
+              points={{-38,16},{25.5455,16}},
+              color={0,0,0},
+              thickness=0.5));
+          annotation (Diagram(coordinateSystem(preserveAspectRatio=false, extent={{-100,
+                    -100},{100,100}})));
+        end TemperatureDevelopment1;
+      end JTCoefficient;
+
+      package FastFill
+        "Used in: Overall efficiency comparison between the fueling methods of SAEJ2601 using dynamic simulations"
+        model FuelingProcess "Both MC and APRR"
+          import SI = Modelica.SIunits;
+
+        /*********************** Thermodynamic property call ***********************************/
+           replaceable package Medium =
+              HydrogenFuelingStationLibrary.Fluids.Hydrogen
+                                                       annotation (choicesAllMatching=true);
+        Medium.ThermodynamicState medium;
+        /****************** General parameters *******************/
+
+        // Real   T_test=Medium.temperature_ph(p=5.2e+7, h=3485433);
+
+        // T_cool
+
+        inner String  TemperatureClass;
+        inner SI.Pressure P_amb=101000;
+        parameter SI.Density Density_check=Medium.density_pT(p=600e5, T=273-30);
+          inner parameter SI.Temperature  T_amb=combined_routines.T_amb;
+        //  inner parameter SI.Temperature T_init_chss=CHSS.TInitial;
+        // inner SI.Temperature   T_cool=HRSinfo.T_cool;
+        // inner SI.Pressure  P_amb;
+        inner parameter SI.Pressure P_start=CHSS.pInitial;
+        // inner Real SOC_target;
+         inner SI.Pressure P_end;
+        // inner SI.Pressure P_ref;
+        // inner Real APRR;
+
+        inner SI.SpecificEntropy s_0;
+        inner SI.SpecificEnthalpy h_0;
+        inner SI.SpecificInternalEnergy u_0;
+
+        inner Integer z1;
+        inner Integer z2;
+        inner Integer z3;
+        inner Integer z4;
+        inner Integer z5=0;
+
+        //   HRSInfo                                      HRSinfo(Fueling_protocol=1, T_amb=
+        //         298.15)
+        //     annotation (Placement(transformation(extent={{80,80},{100,100}})));
+        /****************** equations *******************/
+          HydrogenFuelingStationLibrary.Tanks.Tank1 tank1_1(
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            Adiabatic=true,
+            V=2,
+            pInitial=90000000)
+            annotation (Placement(transformation(extent={{-186,-28},{-164,-20}})));
+          HydrogenFuelingStationLibrary.Tanks.Tank1_MC CHSS(
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            V=0.129,
+            Adiabatic=false,
+            pInitial=5000000)
+            annotation (Placement(transformation(extent={{90,12},{68,20}})));
+          PressureLosses.AveragePressureRampRateMC
+            averagePressureRampRateNewSystem(
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            pInitial=P_start,
+            fueling_method=3,
+            APRR2=52000000,
+            TInitial=233.15)
+            annotation (Placement(transformation(extent={{-8,12},{4,22}})));
+          HydrogenFuelingStationLibrary.PressureLosses.ReductionValve reductionValve(
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            pInitialIn=45000000,
+            pInitialOut=P_start)
+            annotation (Placement(transformation(extent={{-112,12},{-100,20}})));
+          HydrogenFuelingStationLibrary.PressureLosses.PressureLoss pressureLoss(
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            kp=0.45,
+            Length=25,
+            K_length=22.5,
+            inputChoice="Valve",
+            kv=0.1,
+            pInitial=P_start)
+            annotation (Placement(transformation(extent={{42,12},{58,20}})));
+          HydrogenFuelingStationLibrary.PressureLosses.PressureLoss pressureLoss1(
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            kv=1,
+            kp=0.45,
+            inputChoice="Tube",
+            Length=25,
+            Roughness=0.000007,
+            K_length=22.5,
+            pInitial=P_start)
+            annotation (Placement(transformation(extent={{-84,12},{-68,20}})));
+          HydrogenFuelingStationLibrary.PressureLosses.PressureLoss_MC pressureLoss2(
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            kv=0.08,
+            Length=10,
+            K_length=15.5,
+            inputChoice="Filter and Mass flow meter",
+            kp=0.025,
+            pInitial=P_start,
+            TInitial=245.15)
+            annotation (Placement(transformation(extent={{14,12},{30,20}})));
+          FuelingProcedure.FuelingProtocol                                    combined_routines(
+            PressureClass="H70",
+            T_ColdDisp="10",
+            CapacityCategory="B",
+            p_initial=P_start,
+            Communication=true,
+            ColdDispenser=false,
+            redeclare model FuellingProcedures = FuelingProcedure.BaseClass.MC,
+            TemperatureClass="T40",
+            T_amb=293.15)
+            annotation (Placement(transformation(extent={{46,38},{92,78}})));
+
+          HeatExchangers.HeatExchangerWithRampDown                           heatExchangerFixedTemperature(
+            COP=1,
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            T_hex_constant=false,
+            T_hex_con=213.15)
+            annotation (Placement(transformation(extent={{-64,8},{-44,20}})));
+          HydrogenFuelingStationLibrary.Tanks.Tank1 tank1_2(
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            Adiabatic=true,
+            V=3,
+            pInitial=65000000)
+            annotation (Placement(transformation(extent={{-186,8},{-164,16}})));
+          HydrogenFuelingStationLibrary.Tanks.Tank1 tank1_3(
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            Adiabatic=true,
+            V=4,
+            pInitial=45000000)
+            annotation (Placement(transformation(extent={{-186,40},{-164,48}})));
+          HydrogenFuelingStationLibrary.Switches.WithOutStop.Switch3Flows switch3Flows(control=1)
+            annotation (Placement(transformation(extent={{-138,10},{-126,22}})));
+          HydrogenFuelingStationLibrary.Controls.ControlMultiplebanks control(
+              Switch_pressure=5000000)
+            annotation (Placement(transformation(extent={{-26,68},{2,96}})));
+          HydrogenFuelingStationLibrary.HeatTransfer.HeatTransferTank heatTransferTank(LInner=
+                1.027, h_charging=300)
+            annotation (Placement(transformation(extent={{72,-14},{92,6}})));
+          HydrogenFuelingStationLibrary.PressureLosses.PressureLoss pressureLoss3(
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            kv=1,
+            kp=0.45,
+            inputChoice="Tube",
+            Length=10,
+            Roughness=0.000007,
+            K_length=15,
+            pInitial=P_start,
+            TInitial=245.15)
+            annotation (Placement(transformation(extent={{-36,12},{-20,20}})));
+          HydrogenFuelingStationLibrary.HeatTransfer.HeatTransferTank heatTransferTank1(Charging=
+                false)
+            annotation (Placement(transformation(extent={{-184,16},{-164,36}})));
+          HydrogenFuelingStationLibrary.HeatTransfer.HeatTransferTank heatTransferTank2(Charging=
+                false)
+            annotation (Placement(transformation(extent={{-186,-18},{-166,2}})));
+          HydrogenFuelingStationLibrary.HeatTransfer.HeatTransferTank heatTransferTank3(Charging=
+                false)
+            annotation (Placement(transformation(extent={{-186,-54},{-166,-34}})));
+        equation
+        control.Tank1=tank1_3.pInitial;
+        control.Tank2=tank1_2.pInitial;
+        control.Tank3=tank1_1.pInitial;
+
+          control.z1=z1;
+          control.z2=z2;
+          control.z3=z3;
+          control.z4=z4;
+          medium=Medium.setState_pT(P_amb, T_amb);
+
+        s_0=medium.s;
+        h_0=medium.h;
+        u_0=h_0-P_amb*1/medium.d;
+
+        // HRSinfo.P_amb=P_amb;
+          TemperatureClass=combined_routines.TemperatureClass;
+
+         combined_routines.p_end=P_end;
+        // HRSinfo.SOC=SOC_target;
+        // HRSinfo.APRR=APRR;
+        // HRSinfo.P_ref=P_ref;
+
+        /**************** RESULTS *******************************/
+
+        /*************vehicle parameters***************/
+
+        // results.T_chss=CHSS.MC_port.T_chss;
+        // results.p_chss=CHSS.MC_port.p_chss;
+        // results.SOC_level=CHSS.SOC;
+        // results.m_flow/1000=CHSS.portA.m_flow;
+        // results.Mass=CHSS.M;
+        //
+        // /***************** station parameters **********/
+        //
+        // results.p_station/1e6=combined_routines.p_station;
+        // results.T_fuel=combined_routines.T_station;
+        // results.APRR_ramp=averagePressureRampRateNewSystem.portB.p;
+        // results.p_limit_high/1e6=combined_routines.p_limit_high;
+        //
+        // /******************* general MC parameters *******/
+        //
+        // results.p_limit_low/1e6=combined_routines.p_limit_low;
+        // results.p_final/1e6=combined_routines.p_final;
+        //
+        // results.MAT_exp=combined_routines.MAT_exp;
+        // results.MAT_c=combined_routines.MAT_c;
+        // results.MAT_0=combined_routines.MAT_0;
+        // results.MAT_30=combined_routines.MAT_30;
+        //
+        // results.p_target_comm/1e6=combined_routines.p_target_comm;
+        // results.p_target_non_comm/1e6=combined_routines.p_target_non_comm;
+        // results.p_limit_comm/1e6=combined_routines.p_limit_comm;
+        //
+        // results.PRR_per_minute=combined_routines.PRR_dummy;
+        // results.p_ramp/1e6=combined_routines.p_ramp;
+        // results.PRR=combined_routines.PRR;
+        // results.PRR_calc=combined_routines.PRR_calc;
+        // results.PRR_cap=combined_routines.PRR_cap;
+        // results.APRR_used*10=averagePressureRampRateNewSystem.APRR_used;
+        // results.BankPressure=reductionValve.pp1.p;
+        //
+        // results.t_final=combined_routines.t_final;
+        // results.t_final_large=combined_routines.t_final_large;
+        // results.t_final_small=combined_routines.t_final_small;
+        //
+        //  results.ED_pressureLoss=pressureLoss.E_D;
+        //  results.ED_pressureLoss1=pressureLoss1.E_D;
+        //  results.ED_pressureLoss2=pressureLoss2.E_D;
+        //  results.ED_pressureLoss3=pressureLoss3.E_D;
+        //  results.ED_tank1_1=tank1_1.E_D;
+        //  results.ED_tank1_2=tank1_2.E_D;
+        //  results.ED_tank1_3=tank1_3.E_D;
+        //  results.ED_CHSS=CHSS.E_D;
+        //  results.ED_HEX=heatExchangerFixedTemperature.E_D;
+        //  results.ED_reductionValve=reductionValve.E_D;
+
+          connect(pressureLoss1.portA, reductionValve.portB) annotation (Line(
+              points={{-83.8,16},{-100,16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(pressureLoss2.portB, pressureLoss.portA) annotation (Line(
+              points={{29.4,16},{42.2,16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(combined_routines.pressurePort, averagePressureRampRateNewSystem.pp1)
+            annotation (Line(
+              points={{48.3,58},{-2,58},{-2,20.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(heatExchangerFixedTemperature.portA, pressureLoss1.portB) annotation (
+             Line(
+              points={{-62,16},{-62,16},{-68.6,16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(averagePressureRampRateNewSystem.portB, pressureLoss2.portA)
+            annotation (Line(
+              points={{3.2,16},{14.2,16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(switch3Flows.in1, tank1_3.portA) annotation (Line(
+              points={{-136.6,20},{-136,20},{-136,44},{-165.7,44}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(switch3Flows.in3, tank1_1.portA) annotation (Line(
+              points={{-136.6,12},{-136,12},{-136,-24},{-165.7,-24}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(switch3Flows.out1, reductionValve.portA) annotation (Line(
+              points={{-126,16},{-112,16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(control.pp4, tank1_3.pp) annotation (Line(
+              points={{-26,69.12},{-146,69.12},{-146,47.8},{-176,47.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(control.pp5, tank1_2.pp) annotation (Line(
+              points={{-26,71.64},{-146,71.64},{-146,15.8},{-176,15.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(control.pp6, tank1_1.pp) annotation (Line(
+              points={{-26,74.44},{-146,74.44},{-146,-20.2},{-176,-20.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(control.pp1, reductionValve.pp1) annotation (Line(
+              points={{-14.8,68.28},{-110,68.28},{-110,18.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(control.pp2, reductionValve.pp2) annotation (Line(
+              points={{-9.2,68.28},{-102,68.28},{-102,18.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(control.pp3, CHSS.pp) annotation (Line(
+              points={{1.72,82},{36,82},{36,19.8},{80,19.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(control.pp8, CHSS.pp) annotation (Line(
+              points={{-26,80.04},{8,80.04},{8,100},{36,100},{36,19.8},{80,19.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(control.pp9, CHSS.pp) annotation (Line(
+              points={{-26,83.12},{8,83.12},{8,100},{36,100},{36,19.8},{80,19.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(control.pp10, CHSS.pp) annotation (Line(
+              points={{-26,86.76},{8,86.76},{8,100},{36,100},{36,19.8},{80,19.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(control.pp11, CHSS.pp) annotation (Line(
+              points={{-26,89.56},{8,89.56},{8,100},{36,100},{36,19.8},{80,19.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(control.pp12, CHSS.pp) annotation (Line(
+              points={{-26,92.36},{8,92.36},{8,100},{36,100},{36,19.8},{80,19.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(control.pp13, CHSS.pp) annotation (Line(
+              points={{-26,95.44},{8,95.44},{8,100},{36,100},{36,19.8},{80,19.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(control.pp7, CHSS.pp) annotation (Line(
+              points={{-26,77.24},{8,77.24},{8,96},{36,96},{36,19.8},{80,19.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(heatTransferTank.heatFlow, CHSS.heatFlow) annotation (Line(
+              points={{80.6,4.4},{80.6,6.2},{80,6.2},{80,12.1}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(pressureLoss3.portB, averagePressureRampRateNewSystem.portA)
+            annotation (Line(
+              points={{-20.6,16},{-7,16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(pressureLoss3.portA, heatExchangerFixedTemperature.portB)
+            annotation (Line(
+              points={{-35.8,16},{-35.8,16},{-46,16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_3.heatFlow, heatTransferTank1.heatFlow) annotation (Line(
+              points={{-176,40.1},{-176,34.4},{-175.4,34.4}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_2.heatFlow, heatTransferTank2.heatFlow) annotation (Line(
+              points={{-176,8.1},{-176,8.1},{-176,0.4},{-177.4,0.4}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_1.heatFlow, heatTransferTank3.heatFlow) annotation (Line(
+              points={{-176,-27.9},{-178,-27.9},{-178,-35.6},{-177.4,-35.6}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(pressureLoss.portB, CHSS.portA) annotation (Line(
+              points={{57.4,16},{69.7,16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(combined_routines.Vehicle_port, CHSS.MC_port) annotation (Line(points={{78.66,
+                  47.2},{78.66,40},{68,40},{68,30},{87.4,30},{87.4,19.8}},
+                                                                      color={0,255,0}));
+          connect(combined_routines.Station_port, pressureLoss2.MC_port) annotation (
+              Line(points={{57.5,47.2},{17.8,47.2},{17.8,19}},color={170,255,170}));
+          connect(tank1_2.portA, switch3Flows.in2) annotation (Line(
+              points={{-165.7,12},{-150,12},{-150,16},{-136.6,16}},
+              color={0,0,0},
+              thickness=0.5));
+            annotation (Diagram(coordinateSystem(preserveAspectRatio=false, extent={{-200,
+                    -60},{100,100}})),  Icon(coordinateSystem(extent={{-200,-60},{
+                    100,100}})),
+            experiment(StopTime=300));
+        end FuelingProcess;
+
+        model FuelingProcessWithCompressor "Both MC and APRR"
+          import SI = Modelica.SIunits;
+          import HydrogenFuelingStationLibrary;
+
+        /*********************** Thermodynamic property call ***********************************/
+         replaceable package Medium =
+              HydrogenFuelingStationLibrary.Fluids.Hydrogen (onePhase=true)
+            constrainedby Modelica.Media.Interfaces.PartialMedium
+                                                       annotation (choicesAllMatching=true);
+        Medium.ThermodynamicState medium;
+        /****************** General parameters *******************/
+        inner parameter SI.Temperature T_amb=FP.T_amb;
+         inner parameter SI.Pressure P_start=CHSS.pInitial;
+
+        inner String  TemperatureClass;
+        // inner SI.Pressure P_amb=101000;
+
+        //  inner SI.Temperature  T_cool=HRSinfo.T_cool;
+        inner SI.Pressure  P_amb;
+        // inner SI.Pressure P_start;
+        // inner Real SOC_target;
+        inner SI.Pressure P_end;
+        // inner SI.Pressure P_ref;
+        // inner Real APRR;
+
+        inner SI.SpecificEntropy s_0;
+        inner SI.SpecificEnthalpy h_0;
+        inner SI.SpecificInternalEnergy u_0;
+
+        inner Integer z1;
+        inner Integer z2;
+        inner Integer z3;
+        inner Integer z4;
+        inner Integer z5(start=0, fixed=true);
+        /****************** equations *******************/
+          HydrogenFuelingStationLibrary.Tanks.Tank1 Tank1(
+            Adiabatic=false,
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            pInitial=60000000)
+            annotation (Placement(transformation(extent={{-116,-8},{-94,0}})));
+          HydrogenFuelingStationLibrary.Tanks.Tank1 Tank2(
+            Adiabatic=false,
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            pInitial=80000000)
+            annotation (Placement(transformation(extent={{-118,-38},{-96,-30}})));
+          HydrogenFuelingStationLibrary.Tanks.Tank1 Tank3(
+            Adiabatic=false,
+            fixedInitialPressure=true,
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            pInitial=120000000)
+            annotation (Placement(transformation(extent={{-116,-66},{-94,-58}})));
+          HydrogenFuelingStationLibrary.Tanks.Tank1 Bank(
+            V=100,
+            Adiabatic=false,
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            pInitial=30000000)
+            annotation (Placement(transformation(extent={{-116,28},{-94,36}})));
+          HydrogenFuelingStationLibrary.Tanks.Tank1_MC CHSS(
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            Adiabatic=true,
+            V=0.129,
+            pInitial=5000000) annotation (Placement(transformation(extent={{152,-52},{132,-44}})));
+          HydrogenFuelingStationLibrary.PressureLosses.AveragePressureRampRateMC
+            averagePressureRampRateNewSystem_MC2_1(
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            fueling_method=2,
+            pInitial=P_start)
+            annotation (Placement(transformation(extent={{74,-52},{86,-40}})));
+          HydrogenFuelingStationLibrary.PressureLosses.PressureLoss pressureLoss1(
+            Length=25,
+            K_length=22.5,
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            pInitial=P_start,
+            inputChoice="Filter and Mass flow meter",
+            kp=0.025)
+            annotation (Placement(transformation(extent={{54,-44},{70,-52}})));
+          HydrogenFuelingStationLibrary.PressureLosses.PressureLoss pressureLoss2(
+            kv=0.5,
+            Length=10,
+            K_length=15,
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            inputChoice="Filter and Mass flow meter",
+            kp=0.025,
+            pInitial=30000000)
+            annotation (Placement(transformation(extent={{-10,-44},{6,-52}})));
+          HydrogenFuelingStationLibrary.HeatExchangers.HeatExchangerWithRampDown
+            heatExchangerFixedTemperature(
+            COP=1.5,
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            T_hex_con=235.15)
+            annotation (Placement(transformation(extent={{32,-56},{52,-44}})));
+          HydrogenFuelingStationLibrary.PressureLosses.ReductionValve reductionValve(
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            pInitialOut=P_start,
+            pInitialIn=30000000)
+            annotation (Placement(transformation(extent={{14,-52},{26,-44}})));
+          HydrogenFuelingStationLibrary.Switches.WithOutStop.Switch4Flows switch4Flows(control=1)
+            annotation (Placement(transformation(extent={{-30,-54},{-18,-42}})));
+          HydrogenFuelingStationLibrary.Compressor.CompressorWithStop compressorWithStop(Stop=3,
+              redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen)
+            annotation (Placement(transformation(extent={{-90,30},{-76,38}})));
+          HydrogenFuelingStationLibrary.Switches.WithStop.Switch3Flows switch3Flows(control=2,
+              control2=2)
+            annotation (Placement(transformation(extent={{-50,0},{-36,16}})));
+          HydrogenFuelingStationLibrary.PressureLosses.PressureLoss pressureLoss4(
+            Length=25,
+            K_length=22.5,
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            inputChoice="Valve",
+            pInitial=52000000)
+            annotation (Placement(transformation(extent={{-52,36},{-36,28}})));
+          HydrogenFuelingStationLibrary.Mixers.VolumeMixer idealMixing(
+            fixedInitialPressure=false,
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            pInitial=60000000)
+            annotation (Placement(transformation(extent={{-86,-16},{-70,-6}})));
+          HydrogenFuelingStationLibrary.Mixers.VolumeMixer idealMixing1(
+            fixedInitialPressure=false,
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            pInitial=80000000)
+            annotation (Placement(transformation(extent={{-86,-42},{-70,-32}})));
+          HydrogenFuelingStationLibrary.Mixers.VolumeMixer idealMixing2(
+            fixedInitialPressure=false,
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            pInitial=120000000)
+            annotation (Placement(transformation(extent={{-88,-70},{-72,-60}})));
+          HydrogenFuelingStationLibrary.Controls.ControlMultiplebanks control(z3(fixed=
+                  false))
+            annotation (Placement(transformation(extent={{6,66},{38,96}})));
+          HydrogenFuelingStationLibrary.HeatExchangers.HeatExchangerFixedTemperatureSimple
+            heatExchangerFixedTemperatureSimple(
+            COP=2,
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            T_hex=T_amb)
+            annotation (Placement(transformation(extent={{-76,24},{-56,36}})));
+          HydrogenFuelingStationLibrary.HeatTransfer.HeatTransferTank heatTransferTank(
+            xCFRP=0.035,
+            dInner=0.46,
+            xLiner=0.006,
+            h_charging=450)
+            annotation (Placement(transformation(extent={{134,-78},{154,-58}})));
+          HydrogenFuelingStationLibrary.HeatTransfer.HeatTransferTank heatTransferTank1(
+            tank=1,
+            Charging=false,
+            xCFRP=0.05,
+            xLiner=0.1,
+            dInner=0.462,
+            LInner=581)
+            annotation (Placement(transformation(extent={{-114,6},{-94,26}})));
+          HydrogenFuelingStationLibrary.HeatTransfer.HeatTransferTank heatTransferTank2(
+            dInner=0.46,
+            LInner=5.5,
+            tank=3,
+            xCFRP=0.04)
+            annotation (Placement(transformation(extent={{-114,-32},{-94,-12}})));
+          HydrogenFuelingStationLibrary.HeatTransfer.HeatTransferTank heatTransferTank3(
+            dInner=0.046,
+            LInner=5.5,
+            xCFRP=0.04)
+            annotation (Placement(transformation(extent={{-116,-60},{-96,-40}})));
+          HydrogenFuelingStationLibrary.HeatTransfer.HeatTransferTank heatTransferTank4(
+            dInner=0.46,
+            LInner=5.5,
+            xCFRP=0.04)
+            annotation (Placement(transformation(extent={{-114,-88},{-94,-68}})));
+          HydrogenFuelingStationLibrary.PressureLosses.PressureLoss_MC
+                                         pressureLoss3(
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            kv=0.08,
+            Length=10,
+            K_length=15.5,
+            inputChoice="Filter and Mass flow meter",
+            kp=0.025,
+            pInitial=P_start)
+            annotation (Placement(transformation(extent={{92,-52},{108,-44}})));
+          HydrogenFuelingStationLibrary.FuelingProcedure.FuelingProtocol
+                                                     FP(
+            CapacityCategory="B",
+            PressureClass="H70",
+            TemperatureClass="T40",
+            T_ColdDisp="10",
+            p_initial=P_start,
+            Communication=true,
+            ColdDispenser=true,
+            redeclare model FuellingProcedures =
+                HydrogenFuelingStationLibrary.FuelingProcedure.BaseClass.MC,
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            T_amb=298.15)
+            annotation (Placement(transformation(extent={{90,12},{136,52}})));
+        equation
+
+          TemperatureClass=FP.TemperatureClass;
+
+          medium=Medium.setState_pT(P_amb, T_amb);
+
+          control.z1=z1;
+          control.z2=z2;
+          control.z3=z3;
+          control.z4=z4;
+
+        control.Tank1=Tank1.pInitial;
+        control.Tank2=Tank2.pInitial;
+        control.Tank3=Tank3.pInitial;
+
+        s_0=medium.s;
+        h_0=medium.h;
+        u_0=h_0-P_amb*1/medium.d;
+
+        P_amb=101000;
+        // CHSS.p=P_start;
+
+        FP.p_end*1e6=P_end;
+
+        // HRSinfo.SOC=SOC_target;
+        // HRSinfo.APRR=APRR;
+        // HRSinfo.P_ref=P_ref;
+
+          connect(pressureLoss1.portB, averagePressureRampRateNewSystem_MC2_1.portA) annotation (Line(
+              points={{69.4,-48},{74,-48},{74,-47.2},{75,-47.2}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(heatExchangerFixedTemperature.portB, pressureLoss1.portA) annotation (
+             Line(
+              points={{50,-48},{54.2,-48}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(reductionValve.portB, heatExchangerFixedTemperature.portA)
+            annotation (Line(
+              points={{26,-48},{34,-48}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(reductionValve.portA, pressureLoss2.portB) annotation (Line(
+              points={{14,-48},{5.4,-48}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(idealMixing.portA, Tank1.portA) annotation (Line(
+              points={{-84.9333,-10.2857},{-90.3167,-10.2857},{-90.3167,-4},{
+                  -95.7,-4}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+
+          connect(idealMixing1.portA, Tank2.portA) annotation (Line(
+              points={{-84.9333,-36.2857},{-90.3167,-36.2857},{-90.3167,-34},{
+                  -97.7,-34}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+
+          connect(idealMixing2.portA, Tank3.portA) annotation (Line(
+              points={{-86.9333,-64.2857},{-90.3167,-64.2857},{-90.3167,-62},{
+                  -95.7,-62}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+
+          connect(idealMixing.portB, switch3Flows.in1) annotation (Line(
+              points={{-71.2444,-10.2857},{-60,-10.2857},{-60,12},{-48.6,12}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(switch3Flows.in2, idealMixing1.portB) annotation (Line(
+              points={{-48.6,8},{-56,8},{-56,-36.2857},{-71.2444,-36.2857}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(idealMixing2.portB, switch3Flows.in3) annotation (Line(
+              points={{-73.2444,-64.2857},{-52,-64.2857},{-52,4},{-48.6,4}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(Bank.portA, compressorWithStop.portA) annotation (Line(
+              points={{-95.7,32},{-87.6,32}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(control.pp2, reductionValve.pp2) annotation (Line(
+              points={{25.2,66.3},{25.2,16},{24,16},{24,-45.2}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(control.pp1, reductionValve.pp1) annotation (Line(
+              points={{18.8,66.3},{18.8,-45.2},{16,-45.2}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+
+          connect(control.pp8, CHSS.pp) annotation (Line(
+              points={{6,78.9},{16,78.9},{16,76},{142.909,76},{142.909,-44.2}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(control.pp9, CHSS.pp) annotation (Line(
+              points={{6,82.2},{14,82.2},{14,76},{142.909,76},{142.909,-44.2}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(control.pp10, CHSS.pp) annotation (Line(
+              points={{6,86.1},{10,86.1},{10,76},{142.909,76},{142.909,-44.2}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(control.pp11, CHSS.pp) annotation (Line(
+              points={{6,89.1},{18,89.1},{18,76},{142.909,76},{142.909,-44.2}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(control.pp12, CHSS.pp) annotation (Line(
+              points={{6,92.1},{12,92.1},{12,76},{142.909,76},{142.909,-44.2}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(heatExchangerFixedTemperatureSimple.portB, pressureLoss4.portA)
+            annotation (Line(
+              points={{-58,32},{-51.8,32}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(heatExchangerFixedTemperatureSimple.portA, compressorWithStop.portB)
+            annotation (Line(
+              points={{-74,32},{-78,32}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+        algorithm
+          when CHSS.medium.d >= 40.2 then
+           z5:=1;
+           end when;
+
+        equation
+          connect(heatTransferTank.heatFlow, CHSS.heatFlow) annotation (Line(
+              points={{142.6,-59.6},{142.6,-55.5},{142.909,-55.5},{142.909,
+                  -51.9}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+
+          connect(heatTransferTank1.heatFlow, Bank.heatFlow) annotation (Line(
+              points={{-105.4,24.4},{-105.4,25.5},{-106,25.5},{-106,28.1}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(heatTransferTank2.heatFlow, Tank1.heatFlow) annotation (Line(
+              points={{-105.4,-13.6},{-105.4,-10.5},{-106,-10.5},{-106,-7.9}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(heatTransferTank3.heatFlow, Tank2.heatFlow) annotation (Line(
+              points={{-107.4,-41.6},{-107.4,-41.5},{-108,-41.5},{-108,-37.9}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(heatTransferTank4.heatFlow, Tank3.heatFlow) annotation (Line(
+              points={{-105.4,-69.6},{-105.4,-68.5},{-106,-68.5},{-106,-65.9}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(pressureLoss3.portA, averagePressureRampRateNewSystem_MC2_1.portB) annotation (Line(
+              points={{92.2,-48},{88,-48},{88,-47.2},{85.2,-47.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(FP.pressurePort, averagePressureRampRateNewSystem_MC2_1.pp1)
+            annotation (Line(
+              points={{92.3,32},{80,32},{80,-41.44}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(FP.Station_port, pressureLoss3.MC_port) annotation (Line(points={{101.5,
+                  21.2},{101.5,4.4},{95.8,4.4},{95.8,-45}},    color={170,255,170}));
+          connect(FP.Vehicle_port, CHSS.MC_port) annotation (Line(points={{122.66,
+                  21.2},{122.66,-11.6},{149.636,-11.6},{149.636,-44.2}},
+                                                                  color={0,255,0}));
+          connect(pressureLoss3.pp, control.pp3) annotation (Line(
+              points={{104.4,-45},{104.4,-6.5},{37.68,-6.5},{37.68,81}},
+              color={0,0,0},
+              thickness=0.5));
+
+        algorithm
+          assert(Tank3.p<Tank3.pInitial+10100, "Fueling station is back at starting conditions");
+        equation
+          connect(switch4Flows.out1, pressureLoss2.portA) annotation (Line(
+              points={{-18,-48},{-9.8,-48}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(switch4Flows.in1, Bank.portA) annotation (Line(
+              points={{-28.6,-44.4},{-28.6,42.8},{-95.7,42.8},{-95.7,32}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(switch4Flows.in2, idealMixing.portC) annotation (Line(
+              points={{-28.6,-46.8},{-49.3,-46.8},{-49.3,-14.5714},{-71.2444,
+                  -14.5714}},
+              color={0,0,0},
+              thickness=0.5));
+
+          connect(switch4Flows.in3, idealMixing1.portC) annotation (Line(
+              points={{-28.6,-49.2},{-50.3,-49.2},{-50.3,-40.5714},{-71.2444,
+                  -40.5714}},
+              color={0,0,0},
+              thickness=0.5));
+
+          connect(switch4Flows.in4, idealMixing2.portC) annotation (Line(
+              points={{-28.6,-51.6},{-50.3,-51.6},{-50.3,-68.5714},{-73.2444,
+                  -68.5714}},
+              color={0,0,0},
+              thickness=0.5));
+
+          connect(Tank1.pp, control.pp4) annotation (Line(
+              points={{-106,-0.2},{-118,-0.2},{-118,67.2},{6,67.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(Tank2.pp, control.pp5) annotation (Line(
+              points={{-108,-30.2},{-122,-30.2},{-122,69.9},{6,69.9}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(Tank3.pp, control.pp6) annotation (Line(
+              points={{-106,-58.2},{-130,-58.2},{-130,72.9},{6,72.9}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(control.pp7, CHSS.pp) annotation (Line(
+              points={{6,75.9},{144,75.9},{144,-44.2},{142.909,-44.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(control.pp13, CHSS.pp) annotation (Line(
+              points={{6,95.4},{74,95.4},{74,76},{144,76},{144,-44.2},{142.909,
+                  -44.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(pressureLoss4.portB, switch3Flows.out1) annotation (Line(
+              points={{-36.6,32},{-34,32},{-34,24},{-32,24},{-32,18},{-38,18},{
+                  -38,8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(pressureLoss3.portB, CHSS.portA) annotation (Line(
+              points={{107.4,-48},{133.545,-48}},
+              color={0,0,0},
+              thickness=0.5));
+           annotation (Diagram(coordinateSystem(preserveAspectRatio=false, extent={{-140,
+                    -100},{160,100}})),
+            Icon(coordinateSystem(extent={{-140,-100},{160,100}})),
+            experiment(StopTime=600),
+            __Dymola_experimentSetupOutput);
+        end FuelingProcessWithCompressor;
+
+        model FuelingProcess_backup
+          import SI = Modelica.SIunits;
+
+        /*********************** Thermodynamic property call ***********************************/
+           replaceable package Medium =
+              HydrogenFuelingStationLibrary.Fluids.Hydrogen
+                                                       annotation (choicesAllMatching=true);
+        Medium.ThermodynamicState medium;
+        /****************** General parameters *******************/
+
+        // Real   T_test=Medium.temperature_ph(p=5.2e+7, h=3485433);
+
+        parameter SI.Density Density_check=Medium.density_pT(p=600e5, T=273-30);
+         inner parameter SI.Temperature  T_amb=FP.T_amb;
+        // inner SI.Temperature   T_cool=HRSinfo.T_cool;
+        inner parameter SI.Pressure  P_amb=101000;
+        inner parameter SI.Pressure P_start=CHSS.pInitial;
+        // inner Real SOC_target;
+        inner SI.Pressure P_end;
+        // inner SI.Pressure P_ref;
+        // inner Real APRR;
+        inner String  TemperatureClass;
+
+        inner SI.SpecificEntropy s_0;
+        inner SI.SpecificEnthalpy h_0;
+        inner SI.SpecificInternalEnergy u_0;
+
+        inner Integer z1;
+        inner Integer z2;
+        inner Integer z3;
+        inner Integer z4;
+        inner Integer z5=0;
+
+        /****************** equations *******************/
+          HydrogenFuelingStationLibrary.Tanks.Tank1 tank1_1(
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            Adiabatic=true,
+            V=2,
+            pInitial=90000000)
+            annotation (Placement(transformation(extent={{-186,-28},{-164,-20}})));
+          HydrogenFuelingStationLibrary.Tanks.Tank1_MC CHSS(
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            Adiabatic=false,
+            V=0.129,
+            pInitial=5000000)
+            annotation (Placement(transformation(extent={{90,12},{68,20}})));
+          PressureLosses.AveragePressureRampRateMC
+            averagePressureRampRateNewSystem(
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            fueling_method=2,
+            APRR2=24900000,
+            pInitial=5000000,
+            TInitial=239.15)
+            annotation (Placement(transformation(extent={{-8,12},{4,22}})));
+          HydrogenFuelingStationLibrary.PressureLosses.ReductionValve reductionValve(
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            pInitialIn=45000000,
+            pInitialOut=5000000)
+            annotation (Placement(transformation(extent={{-112,12},{-100,20}})));
+          HydrogenFuelingStationLibrary.PressureLosses.PressureLoss pressureLoss(
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            kp=0.45,
+            Length=25,
+            K_length=22.5,
+            inputChoice="Valve",
+            kv=0.4,
+            pInitial=5000000,
+            TInitial=239.15)
+            annotation (Placement(transformation(extent={{42,12},{58,20}})));
+          HydrogenFuelingStationLibrary.PressureLosses.PressureLoss pressureLoss1(
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            kp=0.45,
+            Length=25,
+            Roughness=0.000007,
+            K_length=22.5,
+            inputChoice="Valve",
+            kv=0.1,
+            pInitial=5000000)
+            annotation (Placement(transformation(extent={{-84,12},{-68,20}})));
+          HeatExchangers.HeatExchangerWithRampDown                           heatExchangerFixedTemperature(
+            COP=1,
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            T_hex_constant=false,
+            T_hex_con=236.15)
+            annotation (Placement(transformation(extent={{-64,8},{-44,20}})));
+          HydrogenFuelingStationLibrary.Tanks.Tank1 tank1_2(
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            Adiabatic=true,
+            V=3,
+            pInitial=65000000)
+            annotation (Placement(transformation(extent={{-186,8},{-164,16}})));
+          HydrogenFuelingStationLibrary.Tanks.Tank1 tank1_3(
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            Adiabatic=true,
+            V=4,
+            pInitial=45000000)
+            annotation (Placement(transformation(extent={{-186,40},{-164,48}})));
+          HydrogenFuelingStationLibrary.Switches.WithOutStop.Switch3Flows switch3Flows(control=1)
+            annotation (Placement(transformation(extent={{-138,10},{-126,22}})));
+          HydrogenFuelingStationLibrary.Controls.ControlMultiplebanks control(
+              Switch_pressure=5000000)
+            annotation (Placement(transformation(extent={{-26,68},{2,96}})));
+          HydrogenFuelingStationLibrary.HeatTransfer.HeatTransferTank heatTransferTank(LInner=
+                1.027, h_charging=300)
+            annotation (Placement(transformation(extent={{72,-14},{92,6}})));
+          HydrogenFuelingStationLibrary.PressureLosses.PressureLoss pressureLoss3(
+            redeclare package Medium =
+                HydrogenFuelingStationLibrary.Fluids.Hydrogen,
+            kp=0.45,
+            Length=10,
+            Roughness=0.000007,
+            K_length=15,
+            inputChoice="Valve",
+            kv=0.5,
+            pInitial=5000000,
+            TInitial=239.15)
+            annotation (Placement(transformation(extent={{-36,12},{-20,20}})));
+          HydrogenFuelingStationLibrary.HeatTransfer.HeatTransferTank heatTransferTank1(Charging=
+                false)
+            annotation (Placement(transformation(extent={{-184,16},{-164,36}})));
+          HydrogenFuelingStationLibrary.HeatTransfer.HeatTransferTank heatTransferTank2(Charging=
+                false)
+            annotation (Placement(transformation(extent={{-184,-18},{-164,2}})));
+          HydrogenFuelingStationLibrary.HeatTransfer.HeatTransferTank heatTransferTank3(Charging=
+                false)
+            annotation (Placement(transformation(extent={{-184,-56},{-164,-36}})));
+          FuelingProcedure.FuelingProtocol          FP(
+            CapacityCategory="B",
+            PressureClass="H70",
+            TemperatureClass="T40",
+            Communication=true,
+            T_ColdDisp="10",
+            ColdDispenser=false,
+            redeclare model FuellingProcedures = FuelingProcedure.BaseClass.MC,
+            p_initial=5000000,
+            SOC_target=99,
+            MAT_exp=239.15,
+            T_station_init(start=239.15),
+            T_station_init_30(start=239.15))
+            annotation (Placement(transformation(extent={{50,42},{70,62}})));
+
+          PressureLosses.PressureLoss_MC pressureLoss_MC(redeclare package
+              Medium =
+                Fluids.Hydrogen,
+            inputChoice="Valve",
+            kv=0.1,
+            TInitial=239.15)
+            annotation (Placement(transformation(extent={{14,12},{30,20}})));
+        equation
+        control.Tank1=tank1_3.pInitial;
+        control.Tank2=tank1_2.pInitial;
+        control.Tank3=tank1_1.pInitial;
+          control.z1=z1;
+          control.z2=z2;
+          control.z3=z3;
+          control.z4=z4;
+          medium=Medium.setState_pT(P_amb, T_amb);
+
+        s_0=medium.s;
+        h_0=medium.h;
+        u_0=h_0-P_amb*1/medium.d;
+
+        // HRSinfo.P_amb=P_amb;
+          TemperatureClass=FP.TemperatureClass;
+
+        FP.p_end=P_end;
+        // HRSinfo.SOC=SOC_target;
+        // HRSinfo.APRR=APRR;
+        // HRSinfo.P_ref=P_ref;
+
+        /**************** RESULTS *******************************/
+
+        /*************vehicle parameters***************/
+
+        // results.T_chss=CHSS.MC_port.T_chss;
+        // results.p_chss=CHSS.MC_port.p_chss;
+        // results.SOC_level=CHSS.SOC;
+        // results.m_flow/1000=CHSS.portA.m_flow;
+        // results.Mass=CHSS.M;
+        //
+        // /***************** station parameters **********/
+        //
+        // results.p_station/1e6=combined_routines.p_station;
+        // results.T_fuel=combined_routines.T_station;
+        // results.APRR_ramp=averagePressureRampRateNewSystem.portB.p;
+        // results.p_limit_high/1e6=combined_routines.p_limit_high;
+        //
+        // /******************* general MC parameters *******/
+        //
+        // results.p_limit_low/1e6=combined_routines.p_limit_low;
+        // results.p_final/1e6=combined_routines.p_final;
+        //
+        // results.MAT_exp=combined_routines.MAT_exp;
+        // results.MAT_c=combined_routines.MAT_c;
+        // results.MAT_0=combined_routines.MAT_0;
+        // results.MAT_30=combined_routines.MAT_30;
+        //
+        // results.p_target_comm/1e6=combined_routines.p_target_comm;
+        // results.p_target_non_comm/1e6=combined_routines.p_target_non_comm;
+        // results.p_limit_comm/1e6=combined_routines.p_limit_comm;
+        //
+        // results.PRR_per_minute=combined_routines.PRR_dummy;
+        // results.p_ramp/1e6=combined_routines.p_ramp;
+        // results.PRR=combined_routines.PRR;
+        // results.PRR_calc=combined_routines.PRR_calc;
+        // results.PRR_cap=combined_routines.PRR_cap;
+        // results.APRR_used*10=averagePressureRampRateNewSystem.APRR_used;
+        // results.BankPressure=reductionValve.pp1.p;
+        //
+        // results.t_final=combined_routines.t_final;
+        // results.t_final_large=combined_routines.t_final_large;
+        // results.t_final_small=combined_routines.t_final_small;
+        //
+        //  results.ED_pressureLoss=pressureLoss.E_D;
+        //  results.ED_pressureLoss1=pressureLoss1.E_D;
+        //  results.ED_pressureLoss2=pressureLoss2.E_D;
+        //  results.ED_pressureLoss3=pressureLoss3.E_D;
+        //  results.ED_tank1_1=tank1_1.E_D;
+        //  results.ED_tank1_2=tank1_2.E_D;
+        //  results.ED_tank1_3=tank1_3.E_D;
+        //  results.ED_CHSS=CHSS.E_D;
+        //  results.ED_HEX=heatExchangerFixedTemperature.E_D;
+        //  results.ED_reductionValve=reductionValve.E_D;
+
+          connect(pressureLoss1.portA, reductionValve.portB) annotation (Line(
+              points={{-83.8,16},{-100,16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(heatExchangerFixedTemperature.portA, pressureLoss1.portB) annotation (
+             Line(
+              points={{-62,16},{-62,16},{-68.6,16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(switch3Flows.in1, tank1_3.portA) annotation (Line(
+              points={{-136.6,20},{-136,20},{-136,44},{-165.7,44}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(switch3Flows.in3, tank1_1.portA) annotation (Line(
+              points={{-136.6,12},{-136,12},{-136,-24},{-165.7,-24}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(switch3Flows.out1, reductionValve.portA) annotation (Line(
+              points={{-126,16},{-112,16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(control.pp4, tank1_3.pp) annotation (Line(
+              points={{-26,69.12},{-176,69.12},{-176,47.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(control.pp5, tank1_2.pp) annotation (Line(
+              points={{-26,71.64},{-192,71.64},{-192,15.8},{-176,15.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(control.pp6, tank1_1.pp) annotation (Line(
+              points={{-26,74.44},{-196,74.44},{-196,-20.2},{-176,-20.2}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(control.pp1, reductionValve.pp1) annotation (Line(
+              points={{-14.8,68.28},{-16,68.28},{-16,60},{-110,60},{-110,18.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(control.pp2, reductionValve.pp2) annotation (Line(
+              points={{-9.2,68.28},{-10,68.28},{-10,44},{-102,44},{-102,18.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(control.pp3, CHSS.pp) annotation (Line(
+              points={{1.72,82},{54,82},{54,70},{80,70},{80,19.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(control.pp8, CHSS.pp) annotation (Line(
+              points={{-26,80.04},{54,80.04},{54,70},{80,70},{80,19.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(control.pp9, CHSS.pp) annotation (Line(
+              points={{-26,83.12},{54,83.12},{54,70},{80,70},{80,19.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(control.pp10, CHSS.pp) annotation (Line(
+              points={{-26,86.76},{54,86.76},{54,70},{80,70},{80,19.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(control.pp11, CHSS.pp) annotation (Line(
+              points={{-26,89.56},{54,89.56},{54,70},{80,70},{80,19.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(control.pp12, CHSS.pp) annotation (Line(
+              points={{-26,92.36},{54,92.36},{54,70},{80,70},{80,19.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(control.pp13, CHSS.pp) annotation (Line(
+              points={{-26,95.44},{54,95.44},{54,70},{80,70},{80,19.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(control.pp7, CHSS.pp) annotation (Line(
+              points={{-26,77.24},{54,77.24},{54,70},{80,70},{80,19.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(heatTransferTank.heatFlow, CHSS.heatFlow) annotation (Line(
+              points={{80.6,4.4},{80.6,6.2},{80,6.2},{80,12.1}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(pressureLoss3.portB, averagePressureRampRateNewSystem.portA)
+            annotation (Line(
+              points={{-20.6,16},{-7,16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(pressureLoss3.portA, heatExchangerFixedTemperature.portB)
+            annotation (Line(
+              points={{-35.8,16},{-35.8,16},{-46,16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_3.heatFlow, heatTransferTank1.heatFlow) annotation (Line(
+              points={{-176,40.1},{-176,40.1},{-176,34.4},{-175.4,34.4}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_2.heatFlow, heatTransferTank2.heatFlow) annotation (Line(
+              points={{-176,8.1},{-176,0.4},{-175.4,0.4}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_1.heatFlow, heatTransferTank3.heatFlow) annotation (Line(
+              points={{-176,-27.9},{-176,-37.6},{-175.4,-37.6}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(pressureLoss.portB, CHSS.portA) annotation (Line(
+              points={{57.4,16},{69.7,16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(tank1_2.portA, switch3Flows.in2) annotation (Line(
+              points={{-165.7,12},{-150,12},{-150,16},{-136.6,16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(FP.pressurePort, averagePressureRampRateNewSystem.pp1)
+            annotation (Line(
+              points={{51,52},{-1.4,52},{-1.4,20.8},{-2,20.8}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(averagePressureRampRateNewSystem.portB, pressureLoss_MC.portA)
+            annotation (Line(
+              points={{3.2,16},{14.2,16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(pressureLoss_MC.portB, pressureLoss.portA) annotation (Line(
+              points={{29.4,16},{42.2,16}},
+              color={0,0,0},
+              thickness=0.5));
+          connect(FP.Station_port, pressureLoss_MC.MC_port) annotation (Line(
+                points={{55,46.6},{17.8,46.6},{17.8,19}}, color={170,255,170}));
+          connect(FP.Vehicle_port, CHSS.MC_port) annotation (Line(points={{64.2,
+                  46.6},{64.2,34.3},{87.4,34.3},{87.4,19.8}}, color={0,255,0}));
+            annotation (Diagram(coordinateSystem(preserveAspectRatio=false, extent={{-200,
+                    -60},{100,100}})),  Icon(coordinateSystem(extent={{-200,-60},{
+                    100,100}})));
+        end FuelingProcess_backup;
+
+        model CascadeSystemCompressor
+          import SI = Modelica.SIunits;
+
+        /*********************** Thermodynamic property call ***********************************/
+         replaceable package Medium = Fluids.Hydrogen (onePhase=true)
+           constrainedby Modelica.Media.Interfaces.PartialMedium
+                                                       annotation (choicesAllMatching=true);
+        Medium.ThermodynamicState medium;
+        /****************** General parameters *******************/
+        inner parameter SI.Temperature T_amb=HRSinfo.T_amb;
+        inner parameter SI.Pressure P_initial=HSS.pInitial;
+
+        inner SI.Temperature  T_cool=HRSinfo.T_cool;
+        inner SI.Pressure  P_amb;
+        inner SI.Pressure P_start;
+        inner Real SOC_target;
+        inner SI.Pressure P_end;
+        inner SI.Pressure P_ref;
+        inner Real APRR;
+
+        inner SI.SpecificEntropy s_0;
+        inner SI.SpecificEnthalpy h_0;
+        inner SI.SpecificInternalEnergy u_0;
+
+        inner Integer z1;
+        inner Integer z2;
+        inner Integer z3;
+        inner Integer z4;
+        inner Integer z5(start=0);
+
+        Real stoh=3600;
+        inner String  TemperatureClass;
+        // inner SI.Pressure P_amb=101000;
+        HydrogenFuelingStationLibrary.Units.PowerConsumption P( start=0);
+
+          HRSInfo HRSinfo(T_amb=298.15, P_start=5000000)
+            annotation (Placement(transformation(extent={{-138,80},{-118,100}})));
+        /****************** equations *******************/
+          Tanks.Tank1 Tank1(
+            Adiabatic=false,
+            redeclare package Medium = Fluids.Hydrogen,
+            pInitial=45000000)
+            annotation (Placement(transformation(extent={{-116,-8},{-94,0}})));
+          Tanks.Tank1 Tank2(
+            Adiabatic=false,
+            redeclare package Medium = Fluids.Hydrogen,
+            pInitial=65000000)
+            annotation (Placement(transformation(extent={{-118,-38},{-96,-30}})));
+          Tanks.Tank1 Tank3(
+            Adiabatic=false,
+            fixedInitialPressure=true,
+            redeclare package Medium = Fluids.Hydrogen,
+            pInitial=115000000)
+            annotation (Placement(transformation(extent={{-116,-66},{-94,-58}})));
+          Tanks.Tank1 Bank(
+            V=100,
+            Adiabatic=false,
+            redeclare package Medium = Fluids.Hydrogen,
+            pInitial=30000000)
+            annotation (Placement(transformation(extent={{-116,28},{-94,36}})));
+          Tanks.Tank1 HSS(
+            V=0.172,
+            Adiabatic=false,
+            redeclare package Medium = Fluids.Hydrogen,
+            pInitial=2000000)
+            annotation (Placement(transformation(extent={{152,-52},{132,-44}})));
+          PressureLosses.PressureLoss pressureLoss(
+            inputChoice="Valve",
+            kv=0.06,
+            redeclare package Medium = Fluids.Hydrogen,
+            pInitial=P_initial)
+            annotation (Placement(transformation(extent={{108,-52},{124,-44}})));
+          PressureLosses.AveragePressureRampRate averagePressureRampRate(redeclare
+              package Medium = Medium, pInitial=P_initial)
+            annotation (Placement(transformation(extent={{86,-52},{98,-40}})));
+          PressureLosses.PressureLoss pressureLoss1(
+            Length=25,
+            K_length=22.5,
+            redeclare package Medium = Fluids.Hydrogen,
+            pInitial=P_initial)
+            annotation (Placement(transformation(extent={{58,-52},{74,-44}})));
+          PressureLosses.PressureLoss pressureLoss2(
+            kv=0.5,
+            inputChoice="Tube",
+            Length=10,
+            K_length=15,
+            redeclare package Medium = Fluids.Hydrogen,
+            pInitial=30000000)
+            annotation (Placement(transformation(extent={{-10,-52},{6,-44}})));
+          HeatExchangers.HeatExchangerWithRampDown
+            heatExchangerFixedTemperature(                                   COP=1.5,
+              redeclare package Medium = Fluids.Hydrogen,
+            T_hex_con=233.15)
+            annotation (Placement(transformation(extent={{32,-58},{52,-46}})));
+          PressureLosses.ReductionValve reductionValve(
+            redeclare package Medium = Medium,
+            pInitialIn=30000000,
+            pInitialOut=P_initial)
+            annotation (Placement(transformation(extent={{14,-52},{26,-44}})));
+          Switches.WithOutStop.Switch4Flows switch4Flows(control=1)
+            annotation (Placement(transformation(extent={{-30,-54},{-18,-42}})));
+          Compressor.CompressorWithStop compressorWithStop(Stop=3, redeclare
+              package Medium =
+                       Medium)
+            annotation (Placement(transformation(extent={{-90,30},{-76,38}})));
+          Switches.WithStop.Switch3Flows switch3Flows(control=2, control2=2)
+            annotation (Placement(transformation(extent={{-50,0},{-36,16}})));
+          PressureLosses.PressureLoss pressureLoss4(
+            redeclare package Medium = Medium,
+            Length=25,
+            K_length=22.5,
+            pInitial=52000000)
+            annotation (Placement(transformation(extent={{-52,28},{-36,36}})));
+          Mixers.VolumeMixer idealMixing(
+            redeclare package Medium = Medium,
+            fixedInitialPressure=false,
+            pInitial=52000000)
+            annotation (Placement(transformation(extent={{-86,-16},{-70,-6}})));
+          Mixers.VolumeMixer idealMixing1(
+            redeclare package Medium = Medium,
+            fixedInitialPressure=false,
+            pInitial=74000000)
+            annotation (Placement(transformation(extent={{-86,-42},{-70,-32}})));
+          Mixers.VolumeMixer idealMixing2(
+            redeclare package Medium = Medium,
+            fixedInitialPressure=false,
+            pInitial=95000000)
+            annotation (Placement(transformation(extent={{-86,-70},{-70,-60}})));
+          Controls.ControlMultiplebanks control
+            annotation (Placement(transformation(extent={{6,68},{38,98}})));
+          HeatTransfer.WallPieces.HeatExchangerFixedTemperatureOneWay
+            heatExchangerFixedTemperature1(
+            SAEJ2601=false,
+            COP=2,
+            redeclare package Medium = Fluids.Hydrogen,
+            T_hex=293.15)
+            annotation (Placement(transformation(extent={{-76,24},{-56,36}})));
+          HeatTransfer.HeatTransferTank heatTransferTank(
+            xCFRP=0.035,
+            dInner=0.46,
+            xLiner=0.006,
+            h_charging=450)
+            annotation (Placement(transformation(extent={{134,-78},{154,-58}})));
+          HeatTransfer.HeatTransferTank heatTransferTank1(
+            tank=1,
+            Charging=false,
+            xCFRP=0.05,
+            xLiner=0.1,
+            dInner=0.462,
+            LInner=581)
+            annotation (Placement(transformation(extent={{-114,6},{-94,26}})));
+          HeatTransfer.HeatTransferTank heatTransferTank2(
+            dInner=0.46,
+            LInner=5.5,
+            tank=3,
+            xCFRP=0.04)
+            annotation (Placement(transformation(extent={{-114,-32},{-94,-12}})));
+          HeatTransfer.HeatTransferTank heatTransferTank3(
+            dInner=0.046,
+            LInner=5.5,
+            xCFRP=0.04)
+            annotation (Placement(transformation(extent={{-116,-60},{-96,-40}})));
+          HeatTransfer.HeatTransferTank heatTransferTank4(
+            dInner=0.46,
+            LInner=5.5,
+            xCFRP=0.04)
+            annotation (Placement(transformation(extent={{-114,-88},{-94,-68}})));
+          FuelingProcedure.FuelingProtocol fuelingProtocol(
+            CapacityCategory="B",
+            PressureClass="H70",
+            TemperatureClass="T40",
+            p_initial=P_initial,
+            redeclare model FuellingProcedures =
+                FuelingProcedure.BaseClass.APRR)
+            annotation (Placement(transformation(extent={{110,20},{130,40}})));
+        equation
+          medium=Medium.setState_pT(P_amb, T_amb);
+
+          control.z1=z1;
+          control.z2=z2;
+          control.z3=z3;
+          control.z4=z4;
+
+        TemperatureClass=fuelingProtocol.TemperatureClass;
+        fuelingProtocol.p_end=P_end;
+
+        s_0=medium.s;
+        h_0=medium.h;
+        u_0=h_0-P_amb*1/medium.d;
+
+        P=(heatExchangerFixedTemperature.W+heatExchangerFixedTemperature1.W+compressorWithStop.W)/3600/1000;
+
+        control.Tank1=Tank1.pInitial;
+        control.Tank2=Tank2.pInitial;
+        control.Tank3=Tank3.pInitial;
+
+        HRSinfo.P_amb=P_amb;
+        HRSinfo.P_start=P_start;
+        HRSinfo.FP=P_end;
+        HRSinfo.SOC=SOC_target;
+        HRSinfo.APRR=APRR;
+        HRSinfo.P_ref=P_ref;
+
+          connect(averagePressureRampRate.portB, pressureLoss.portA) annotation (Line(
+              points={{97.2,-47.2},{102.6,-47.2},{102.6,-48},{108.2,-48}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(pressureLoss.portB, HSS.portA) annotation (Line(
+              points={{123.4,-48},{133.545,-48}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(pressureLoss1.portB, averagePressureRampRate.portA) annotation (Line(
+              points={{73.4,-48},{80,-48},{80,-47.2},{87,-47.2}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(heatExchangerFixedTemperature.portB, pressureLoss1.portA) annotation (
+             Line(
+              points={{50,-50},{54,-50},{54,-48},{58.2,-48}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(reductionValve.portB, heatExchangerFixedTemperature.portA)
+            annotation (Line(
+              points={{26,-48},{30,-48},{30,-50},{34,-50}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(reductionValve.portA, pressureLoss2.portB) annotation (Line(
+              points={{14,-48},{5.4,-48}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(switch4Flows.out1, pressureLoss2.portA) annotation (Line(
+              points={{-18,-48},{-9.8,-48}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(Bank.portA, switch4Flows.in1) annotation (Line(
+              points={{-95.7,32},{-94,32},{-94,48},{-28.6,48},{-28.6,-44.4}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(pressureLoss4.portB, switch3Flows.out1) annotation (Line(
+              points={{-36.6,32},{-32,32},{-32,8},{-38,8}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(idealMixing.portA, Tank1.portA) annotation (Line(
+              points={{-84.9333,-10.2857},{-90.3167,-10.2857},{-90.3167,-4},{
+                  -95.7,-4}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+
+          connect(idealMixing1.portA, Tank2.portA) annotation (Line(
+              points={{-84.9333,-36.2857},{-90.3167,-36.2857},{-90.3167,-34},{
+                  -97.7,-34}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+
+          connect(idealMixing2.portA, Tank3.portA) annotation (Line(
+              points={{-84.9333,-64.2857},{-90.3167,-64.2857},{-90.3167,-62},{
+                  -95.7,-62}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+
+          connect(idealMixing.portB, switch3Flows.in1) annotation (Line(
+              points={{-71.2444,-10.2857},{-60,-10.2857},{-60,12},{-48.6,12}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(switch3Flows.in2, idealMixing1.portB) annotation (Line(
+              points={{-48.6,8},{-56,8},{-56,-36.2857},{-71.2444,-36.2857}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(idealMixing2.portB, switch3Flows.in3) annotation (Line(
+              points={{-71.2444,-64.2857},{-52,-64.2857},{-52,4},{-48.6,4}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(idealMixing.portC, switch4Flows.in2) annotation (Line(
+              points={{-71.2444,-14.5714},{-48,-14.5714},{-48,-46.8},{-28.6,
+                  -46.8}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(idealMixing1.portC, switch4Flows.in3) annotation (Line(
+              points={{-71.2444,-40.5714},{-56,-40.5714},{-56,-49.2},{-28.6,
+                  -49.2}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(idealMixing2.portC, switch4Flows.in4) annotation (Line(
+              points={{-71.2444,-68.5714},{-46,-68.5714},{-46,-51.6},{-28.6,
+                  -51.6}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(Bank.portA, compressorWithStop.portA) annotation (Line(
+              points={{-95.7,32},{-87.6,32}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(control.pp2, reductionValve.pp2) annotation (Line(
+              points={{25.2,68.3},{25.2,16},{24,16},{24,-45.2}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(control.pp1, reductionValve.pp1) annotation (Line(
+              points={{18.8,68.3},{18.8,-45.2},{16,-45.2}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(control.pp4, Tank1.pp) annotation (Line(
+              points={{6,69.2},{-62,69.2},{-62,68},{-118,68},{-118,2},{-106,2},{-106,-0.2}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+
+          connect(control.pp5, Tank2.pp) annotation (Line(
+              points={{6,71.9},{-62,71.9},{-62,70},{-128,70},{-128,-30.2},{-108,-30.2}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+
+          connect(control.pp6, Tank3.pp) annotation (Line(
+              points={{6,74.9},{-64,74.9},{-64,72},{-132,72},{-132,-58.2},{-106,-58.2}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+
+          connect(HSS.pp, control.pp3) annotation (Line(
+              points={{142.909,-44.2},{142.909,83},{37.68,83}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(control.pp7, HSS.pp) annotation (Line(
+              points={{6,77.9},{78,77.9},{78,76},{142.909,76},{142.909,-44.2}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(control.pp8, HSS.pp) annotation (Line(
+              points={{6,80.9},{16,80.9},{16,76},{142.909,76},{142.909,-44.2}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(control.pp9, HSS.pp) annotation (Line(
+              points={{6,84.2},{14,84.2},{14,76},{142.909,76},{142.909,-44.2}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(control.pp10, HSS.pp) annotation (Line(
+              points={{6,88.1},{10,88.1},{10,76},{142.909,76},{142.909,-44.2}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(control.pp11, HSS.pp) annotation (Line(
+              points={{6,91.1},{18,91.1},{18,76},{142.909,76},{142.909,-44.2}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(control.pp12, HSS.pp) annotation (Line(
+              points={{6,94.1},{10,94.1},{10,76},{142.909,76},{142.909,-44.2}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(heatExchangerFixedTemperature1.portB, pressureLoss4.portA)
+            annotation (Line(
+              points={{-58,32},{-51.8,32}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(heatExchangerFixedTemperature1.portA, compressorWithStop.portB)
+            annotation (Line(
+              points={{-74,32},{-78,32}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(averagePressureRampRate.pp1, control.pp13) annotation (Line(
+              points={{92,-41.44},{92,97.4},{6,97.4}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+        algorithm
+           when HSS.medium.d>=40.2 then
+           z5:=1;
+           end when;
+
+        equation
+          connect(heatTransferTank.heatFlow, HSS.heatFlow) annotation (Line(
+              points={{142.6,-59.6},{142.6,-55.5},{142.909,-55.5},{142.909,
+                  -51.9}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+
+          connect(heatTransferTank1.heatFlow, Bank.heatFlow) annotation (Line(
+              points={{-105.4,24.4},{-105.4,25.5},{-106,25.5},{-106,28.1}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(heatTransferTank2.heatFlow, Tank1.heatFlow) annotation (Line(
+              points={{-105.4,-13.6},{-105.4,-10.5},{-106,-10.5},{-106,-7.9}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(heatTransferTank3.heatFlow, Tank2.heatFlow) annotation (Line(
+              points={{-107.4,-41.6},{-107.4,-41.5},{-108,-41.5},{-108,-37.9}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          connect(heatTransferTank4.heatFlow, Tank3.heatFlow) annotation (Line(
+              points={{-105.4,-69.6},{-105.4,-68.5},{-106,-68.5},{-106,-65.9}},
+              color={0,0,0},
+              thickness=0.5,
+              smooth=Smooth.None));
+          annotation (Diagram(coordinateSystem(preserveAspectRatio=false, extent={{-140,
+                    -100},{160,100}})),
+            Icon(coordinateSystem(extent={{-140,-100},{160,100}})),
+            experiment(StopTime=600),
+            __Dymola_experimentSetupOutput);
+        end CascadeSystemCompressor;
+
+        package TamperatureDevelopment
+          "Used in: Dynamic simulation of the Effect of vehicle-side pressure loss of hydrogen fuelling process"
+          model TemperatureDevelopment1 "With cooling and pressure loss"
+            import SI = Modelica.SIunits;
+            import HydrogenFuellingStationLibrary =
+              HydrogenFuelingStationLibrary;
+
+             replaceable package Medium =
+                HydrogenFuellingStationLibrary.Fluids.Hydrogen
+             constrainedby Modelica.Media.Interfaces.PartialMedium
+                                                         annotation (choicesAllMatching=true);
+
+          SI.InternalEnergy U;
+          SI.Mass M;
+          SI.Enthalpy H;
+
+          Medium.ThermodynamicState medium;
+          inner SI.SpecificEntropy s_0;
+          inner SI.SpecificEnthalpy h_0;
+          inner SI.SpecificInternalEnergy u_0;
+          inner parameter SI.Temperature   T_amb=HRSinfo.T_amb;
+          // inner parameter SI.Pressure P_amb=101e3;
+          inner parameter SI.Temperature T_cool=-40;
+          parameter SI.Pressure p_ending=80e6;
+          inner SI.Pressure  P_amb;
+          inner SI.Pressure P_start;
+          inner Real SOC_target;
+          inner SI.Pressure P_end;
+          inner SI.Pressure P_ref;
+          inner Real APRR;
+
+          inner Integer z3=0;
+          inner Integer z5=0;
+
+          Real SOC;
+
+            HydrogenFuellingStationLibrary.Tanks.Tank1 tank1_1(
+              fixedInitialPressure=true,
+              m_flowStart=0,
+              Adiabatic=true,
+              V=100,
+              redeclare package Medium =
+                  HydrogenFuellingStationLibrary.Fluids.Hydrogen,
+              pInitial=100000000)
+              annotation (Placement(transformation(extent={{-92,12},{-70,20}})));
+            HydrogenFuellingStationLibrary.Tanks.Tank1 CHSS(
+              Adiabatic=true,
+              redeclare package Medium =
+                  HydrogenFuellingStationLibrary.Fluids.Hydrogen,
+              V=0.172,
+              pInitial=5000000)
+              annotation (Placement(transformation(extent={{44,12},{24,20}})));
+            HydrogenFuellingStationLibrary.HeatTransfer.WallPieces.HeatExchangerFixedTemperatureOneWay
+              heatExchangerFixedTemperature(
+              SAEJ2601=false,
+              COP=1,
+              redeclare package Medium =
+                  HydrogenFuellingStationLibrary.Fluids.Hydrogen,
+              T_hex=223.15)
+              annotation (Placement(transformation(extent={{-42,8},{-22,20}})));
+            PressureLosses.PressureLoss pressureLoss(
+              inputChoice="Valve",
+              redeclare package Medium =
+                  HydrogenFuellingStationLibrary.Fluids.Hydrogen,
+              kv=0.5)
+              annotation (Placement(transformation(extent={{2,12},{18,20}})));
+            HydrogenFuellingStationLibrary.PressureLosses.ReductionValve reductionValve(
+                redeclare package Medium =
+                  HydrogenFuellingStationLibrary.Fluids.Hydrogen)
+              annotation (Placement(transformation(extent={{-60,12},{-48,20}})));
+            HydrogenFuellingStationLibrary.PressureLosses.AveragePressureRampRate
+              averagePressureRampRate(redeclare package Medium =
+                  HydrogenFuellingStationLibrary.Fluids.Hydrogen, SAEJ2601=false,
+              APRR2=28000000,
+              pInitial=5000000)
+              annotation (Placement(transformation(extent={{-18,12},{-6,22}})));
+            HydrogenFuellingStationLibrary.HRSInfo HRSinfo
+              annotation (Placement(transformation(extent={{68,72},{88,92}})));
+
+          equation
+            medium=Medium.setState_pT(P_amb, T_amb);
+            s_0=Medium.specificEntropy(medium);
+            h_0=Medium.specificEnthalpy(medium);
+            u_0=h_0-P_amb*1/Medium.density(medium);
+             M=tank1_1.M+CHSS.M;
+             U=tank1_1.U+CHSS.U;
+             H=tank1_1.h*tank1_1.M+CHSS.h*CHSS.M;
+
+             SOC=CHSS.medium.d/40.2;
+
+          HRSinfo.P_amb=P_amb;
+          HRSinfo.P_start=P_start;
+          HRSinfo.FP=P_end;
+          HRSinfo.SOC=SOC_target;
+          HRSinfo.APRR=APRR;
+          HRSinfo.P_ref=P_ref;
+
+            connect(pressureLoss.portB, CHSS.portA) annotation (Line(
+                points={{17.4,16},{25.5455,16}},
+                color={0,0,0},
+                thickness=0.5,
+                smooth=Smooth.None));
+            connect(reductionValve.portB, heatExchangerFixedTemperature.portA)
+              annotation (Line(
+                points={{-48,16},{-40,16}},
+                color={0,0,0},
+                thickness=0.5));
+            connect(reductionValve.portA, tank1_1.portA) annotation (Line(
+                points={{-60,16},{-71.7,16}},
+                color={0,0,0},
+                thickness=0.5));
+            connect(averagePressureRampRate.portB, pressureLoss.portA) annotation (Line(
+                points={{-6.8,16},{-4,16},{2.2,16}},
+                color={0,0,0},
+                thickness=0.5));
+            connect(averagePressureRampRate.portA, heatExchangerFixedTemperature.portB)
+              annotation (Line(
+                points={{-17,16},{-24,16}},
+                color={0,0,0},
+                thickness=0.5));
+
+           if CHSS.p>=p_ending then
+                terminate("Final pressure reached");
+           end if;
+
+            annotation (Diagram(coordinateSystem(preserveAspectRatio=false, extent={{-100,
+                      -100},{100,100}})));
+          end TemperatureDevelopment1;
+
+          model TemperatureDevelopment2 "With cooling and without pressure loss"
+            import SI = Modelica.SIunits;
+            import HydrogenFuellingStationLibrary =
+              HydrogenFuelingStationLibrary;
+
+             replaceable package Medium =
+                HydrogenFuellingStationLibrary.Fluids.Hydrogen
+             constrainedby Modelica.Media.Interfaces.PartialMedium
+                                                         annotation (choicesAllMatching=true);
+
+          SI.InternalEnergy U;
+          SI.Mass M;
+          SI.Enthalpy H;
+
+          Medium.ThermodynamicState medium;
+          inner SI.SpecificEntropy s_0;
+          inner SI.SpecificEnthalpy h_0;
+          inner SI.SpecificInternalEnergy u_0;
+          inner parameter SI.Temperature   T_amb=HRSinfo.T_amb;
+          // inner parameter SI.Pressure P_amb=101e3;
+          inner parameter SI.Temperature T_cool=-40;
+          parameter SI.Pressure p_ending=80e6;
+          inner SI.Pressure  P_amb;
+          inner SI.Pressure P_start;
+          inner Real SOC_target;
+          inner SI.Pressure P_end;
+          inner SI.Pressure P_ref;
+          inner Real APRR;
+
+          inner Integer z3=0;
+          inner Integer z5=0;
+
+            HydrogenFuellingStationLibrary.Tanks.Tank1 tank1_1(
+              fixedInitialPressure=true,
+              m_flowStart=0,
+              Adiabatic=true,
+              V=100,
+              redeclare package Medium =
+                  HydrogenFuellingStationLibrary.Fluids.Hydrogen,
+              pInitial=100000000)
+              annotation (Placement(transformation(extent={{-92,12},{-70,20}})));
+            HydrogenFuellingStationLibrary.Tanks.Tank1 CHSS(
+              Adiabatic=true,
+              redeclare package Medium =
+                  HydrogenFuellingStationLibrary.Fluids.Hydrogen,
+              V=0.172,
+              pInitial=5000000)
+              annotation (Placement(transformation(extent={{44,12},{24,20}})));
+            HydrogenFuellingStationLibrary.HeatTransfer.WallPieces.HeatExchangerFixedTemperatureOneWay
+              heatExchangerFixedTemperature(
+              SAEJ2601=false,
+              COP=1,
+              redeclare package Medium =
+                  HydrogenFuellingStationLibrary.Fluids.Hydrogen,
+              T_hex=213.15)
+              annotation (Placement(transformation(extent={{-40,8},{-20,20}})));
+            HydrogenFuellingStationLibrary.PressureLosses.ReductionValve reductionValve(
+                redeclare package Medium =
+                  HydrogenFuellingStationLibrary.Fluids.Hydrogen)
+              annotation (Placement(transformation(extent={{-60,12},{-48,20}})));
+            HydrogenFuellingStationLibrary.PressureLosses.AveragePressureRampRate
+              averagePressureRampRate(redeclare package Medium =
+                  HydrogenFuellingStationLibrary.Fluids.Hydrogen, SAEJ2601=false,
+              APRR2=100000000,
+              pInitial=5000000)
+              annotation (Placement(transformation(extent={{-8,12},{4,22}})));
+            HydrogenFuellingStationLibrary.HRSInfo HRSinfo
+              annotation (Placement(transformation(extent={{68,72},{88,92}})));
+
+          equation
+            medium=Medium.setState_pT(P_amb, T_amb);
+            s_0=Medium.specificEntropy(medium);
+            h_0=Medium.specificEnthalpy(medium);
+            u_0=h_0-P_amb*1/Medium.density(medium);
+             M=tank1_1.M+CHSS.M;
+             U=tank1_1.U+CHSS.U;
+             H=tank1_1.h*tank1_1.M+CHSS.h*CHSS.M;
+
+          HRSinfo.P_amb=P_amb;
+          HRSinfo.P_start=P_start;
+          HRSinfo.FP=P_end;
+          HRSinfo.SOC=SOC_target;
+          HRSinfo.APRR=APRR;
+          HRSinfo.P_ref=P_ref;
+
+            connect(reductionValve.portB, heatExchangerFixedTemperature.portA)
+              annotation (Line(
+                points={{-48,16},{-44,16},{-38,16}},
+                color={0,0,0},
+                thickness=0.5));
+            connect(reductionValve.portA, tank1_1.portA) annotation (Line(
+                points={{-60,16},{-71.7,16}},
+                color={0,0,0},
+                thickness=0.5));
+            connect(averagePressureRampRate.portA, heatExchangerFixedTemperature.portB)
+              annotation (Line(
+                points={{-7,16},{-7,16},{-22,16}},
+                color={0,0,0},
+                thickness=0.5));
+
+           if CHSS.p>=p_ending then
+                terminate("Final pressure reached");
+           end if;
+
+            connect(averagePressureRampRate.portB, CHSS.portA) annotation (Line(
+                points={{3.2,16},{25.5455,16}},
+                color={0,0,0},
+                thickness=0.5));
+            annotation (Diagram(coordinateSystem(preserveAspectRatio=false, extent={{-100,
+                      -100},{100,100}})));
+          end TemperatureDevelopment2;
+
+          model TemperatureDevelopment3 "Without Cooling and pressure loss"
+            import SI = Modelica.SIunits;
+            import HydrogenFuellingStationLibrary =
+              HydrogenFuelingStationLibrary;
+
+             replaceable package Medium =
+                HydrogenFuellingStationLibrary.Fluids.Hydrogen
+             constrainedby Modelica.Media.Interfaces.PartialMedium
+                                                         annotation (choicesAllMatching=true);
+
+          SI.InternalEnergy U;
+          SI.Mass M;
+          SI.Enthalpy H;
+
+          Medium.ThermodynamicState medium;
+          inner SI.SpecificEntropy s_0;
+          inner SI.SpecificEnthalpy h_0;
+          inner SI.SpecificInternalEnergy u_0;
+          inner parameter SI.Temperature   T_amb=HRSinfo.T_amb;
+          // inner parameter SI.Pressure P_amb=101e3;
+          inner parameter SI.Temperature T_cool=-40;
+          parameter SI.Pressure p_ending=80e6;
+          inner SI.Pressure  P_amb;
+          inner SI.Pressure P_start;
+          inner Real SOC_target;
+          inner SI.Pressure P_end;
+          inner SI.Pressure P_ref;
+          inner Real APRR;
+
+          inner Integer z3=0;
+          inner Integer z5=0;
+
+            HydrogenFuellingStationLibrary.Tanks.Tank1 tank1_1(
+              fixedInitialPressure=true,
+              m_flowStart=0,
+              Adiabatic=true,
+              V=100,
+              redeclare package Medium =
+                  HydrogenFuellingStationLibrary.Fluids.Hydrogen,
+              pInitial=100000000)
+              annotation (Placement(transformation(extent={{-92,12},{-70,20}})));
+            HydrogenFuellingStationLibrary.Tanks.Tank1 CHSS(
+              Adiabatic=true,
+              redeclare package Medium =
+                  HydrogenFuellingStationLibrary.Fluids.Hydrogen,
+              V=0.172,
+              pInitial=5000000)
+              annotation (Placement(transformation(extent={{44,12},{24,20}})));
+            HydrogenFuellingStationLibrary.PressureLosses.ReductionValve reductionValve(
+                redeclare package Medium =
+                  HydrogenFuellingStationLibrary.Fluids.Hydrogen)
+              annotation (Placement(transformation(extent={{-50,12},{-38,20}})));
+            HydrogenFuellingStationLibrary.PressureLosses.AveragePressureRampRate
+              averagePressureRampRate(redeclare package Medium =
+                  HydrogenFuellingStationLibrary.Fluids.Hydrogen, SAEJ2601=false,
+              APRR2=35000000,
+              pInitial=5000000)
+              annotation (Placement(transformation(extent={{-18,12},{-6,22}})));
+            HydrogenFuellingStationLibrary.HRSInfo HRSinfo
+              annotation (Placement(transformation(extent={{68,72},{88,92}})));
+
+          equation
+            medium=Medium.setState_pT(P_amb, T_amb);
+            s_0=Medium.specificEntropy(medium);
+            h_0=Medium.specificEnthalpy(medium);
+            u_0=h_0-P_amb*1/Medium.density(medium);
+             M=tank1_1.M+CHSS.M;
+             U=tank1_1.U+CHSS.U;
+             H=tank1_1.h*tank1_1.M+CHSS.h*CHSS.M;
+
+          HRSinfo.P_amb=P_amb;
+          HRSinfo.P_start=P_start;
+          HRSinfo.FP=P_end;
+          HRSinfo.SOC=SOC_target;
+          HRSinfo.APRR=APRR;
+          HRSinfo.P_ref=P_ref;
+
+            connect(reductionValve.portA, tank1_1.portA) annotation (Line(
+                points={{-50,16},{-71.7,16}},
+                color={0,0,0},
+                thickness=0.5));
+
+           if CHSS.p>=p_ending then
+                terminate("Final pressure reached");
+           end if;
+
+            connect(averagePressureRampRate.portB, CHSS.portA) annotation (Line(
+                points={{-6.8,16},{25.5455,16}},
+                color={0,0,0},
+                thickness=0.5));
+            connect(reductionValve.portB, averagePressureRampRate.portA)
+              annotation (Line(
+                points={{-38,16},{-17,16}},
+                color={0,0,0},
+                thickness=0.5));
+            annotation (Diagram(coordinateSystem(preserveAspectRatio=false, extent={{-100,
+                      -100},{100,100}})));
+          end TemperatureDevelopment3;
+        end TamperatureDevelopment;
+      end FastFill;
     end ModelsUsedInPublications;
 
     package VerificationOfComponents
@@ -14831,8 +19849,8 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
                                                      annotation (choicesAllMatching=true);
 
         HydrogenFuellingStationLibrary.Tanks.Tank1
-                                              tank1_1(redeclare package Medium
-            = Medium,
+                                              tank1_1(redeclare package Medium =
+              Medium,
           Adiabatic=false,
           V=1,
           fixedInitialPressure=true,
@@ -14840,8 +19858,8 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
           pInitial=2000000)
           annotation (Placement(transformation(extent={{-58,2},{-36,10}})));
         HydrogenFuellingStationLibrary.Tanks.Tank1
-                                              tank1_2(redeclare package Medium
-            = Medium, pInitial=100000)
+                                              tank1_2(redeclare package Medium =
+              Medium, pInitial=100000)
           annotation (Placement(transformation(extent={{38,2},{18,10}})));
         HydrogenFuellingStationLibrary.PressureLosses.PressureLoss
                                     pressureLoss(
@@ -15060,8 +20078,8 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
           APRR2=2000000,
           pInitial=100000)
           annotation (Placement(transformation(extent={{24,4},{36,14}})));
-        PressureLosses.ReductionValve reductionValve(redeclare package Medium
-            = Medium,
+        PressureLosses.ReductionValve reductionValve(redeclare package Medium =
+              Medium,
           pInitialIn=4000000,
           pInitialOut=100000)
           annotation (Placement(transformation(extent={{2,4},{14,12}})));
@@ -15444,6 +20462,97 @@ reduction valve"     annotation(Dialog(group="Refuelling tank switch pressure"))
                   -100},{100,100}})));
       end TemperatureTest2;
 
+      model Ejector_Test
+        import HydrogenFuelingStationLibrary;
+
+        import SI = Modelica.SIunits;
+
+         replaceable package Medium =
+            Fluids.Hydrogen
+         constrainedby Modelica.Media.Interfaces.PartialMedium
+                                                     annotation (choicesAllMatching=true);
+
+      SI.InternalEnergy U;
+      SI.Mass M;
+      SI.Enthalpy H;
+
+      Medium.ThermodynamicState medium;
+      inner SI.SpecificEntropy s_0;
+      inner SI.SpecificEnthalpy h_0;
+      inner SI.SpecificInternalEnergy u_0;
+      inner parameter SI.Temperature   T_amb=HRSinfo.T_amb;
+      // inner parameter SI.Pressure P_amb=101e3;
+      inner parameter SI.Temperature T_cool=-40+273;
+      parameter SI.Pressure p_ending=80e6;
+      inner SI.Pressure  P_amb;
+      inner SI.Pressure P_start;
+      inner Real SOC_target;
+      inner SI.Pressure P_end;
+      inner SI.Pressure P_ref;
+      inner Real APRR;
+
+      inner Integer z3=0;
+      inner Integer z5=0;
+
+      Real SOC;
+
+        HRSInfo                                HRSinfo
+          annotation (Placement(transformation(extent={{68,72},{88,92}})));
+
+        HydrogenFuelingStationLibrary.Tanks.Tank1 tank1_1(redeclare package
+            Medium = Fluids.Hydrogen, pInitial=90000000)
+          annotation (Placement(transformation(extent={{-88,-4},{-66,4}})));
+        HydrogenFuelingStationLibrary.Tanks.Tank1 tank1_2(redeclare package
+            Medium = Fluids.Hydrogen, pInitial=30000000)
+          annotation (Placement(transformation(extent={{-88,-28},{-66,-20}})));
+        HydrogenFuelingStationLibrary.Tanks.Tank1 CHSS(
+          V=0.15,
+          redeclare package Medium = Fluids.Hydrogen,
+          pInitial=25000000)
+          annotation (Placement(transformation(extent={{70,-18},{48,-10}})));
+
+        Ejectors.Ejector_Original ejector(
+            redeclare package Medium =
+              Fluids.Hydrogen)
+          annotation (Placement(transformation(extent={{-4,-24},{16,-4}})));
+      equation
+        medium=Medium.setState_pT(P_amb, T_amb);
+        s_0=Medium.specificEntropy(medium);
+        h_0=Medium.specificEnthalpy(medium);
+        u_0=h_0-P_amb*1/Medium.density(medium);
+         M=tank1_1.M+CHSS.M;
+         U=tank1_1.U+CHSS.U;
+         H=tank1_1.h*tank1_1.M+CHSS.h*CHSS.M;
+
+         SOC=CHSS.medium.d/40.2;
+
+      HRSinfo.P_amb=P_amb;
+      HRSinfo.P_start=P_start;
+      HRSinfo.FP=P_end;
+      HRSinfo.SOC=SOC_target;
+      HRSinfo.APRR=APRR;
+      HRSinfo.P_ref=P_ref;
+
+       if CHSS.p>=p_ending then
+            terminate("Final pressure reached");
+       end if;
+
+        connect(ejector.car_tank, CHSS.portA) annotation (Line(
+            points={{12,-14},{49.7,-14}},
+            color={0,0,0},
+            thickness=0.5));
+        connect(ejector.hp_tank, tank1_1.portA) annotation (Line(
+            points={{0,-10},{-34,-10},{-34,0},{-67.7,0}},
+            color={0,0,0},
+            thickness=0.5));
+        connect(ejector.lp_tank, tank1_2.portA) annotation (Line(
+            points={{0,-18},{-34,-18},{-34,-24},{-67.7,-24}},
+            color={0,0,0},
+            thickness=0.5));
+
+        annotation (Icon(coordinateSystem(preserveAspectRatio=false)), Diagram(
+              coordinateSystem(preserveAspectRatio=false)));
+      end Ejector_Test;
     end VerificationOfComponents;
   end Models;
   annotation (uses(                CoolProp2Modelica(version="1"), Modelica(
